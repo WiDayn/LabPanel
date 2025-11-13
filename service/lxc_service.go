@@ -267,3 +267,47 @@ systemctl restart ssh || service ssh restart || /etc/init.d/ssh restart`
 	return nil
 }
 
+// ChangePassword 修改容器的root密码
+func (s *LxcService) ChangePassword(name, password string) error {
+	// 确保容器正在运行
+	if err := s.waitForContainerRunning(name, 30); err != nil {
+		return fmt.Errorf("容器未运行或无法访问: %v", err)
+	}
+
+	// 设置root密码 - 使用passwd命令，通过标准输入传递两次密码
+	cmd := exec.Command("lxc", "exec", name, "--", "passwd", "root")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("创建stdin管道失败: %v", err)
+	}
+
+	// 设置输出管道
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// 启动命令
+	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		return fmt.Errorf("启动命令失败: %v", err)
+	}
+
+	// 写入两次密码（passwd需要输入两次进行确认）
+	passwordInput := fmt.Sprintf("%s\n%s\n", password, password)
+	_, err = stdin.Write([]byte(passwordInput))
+	if err != nil {
+		stdin.Close()
+		cmd.Wait()
+		return fmt.Errorf("写入密码失败: %v", err)
+	}
+	stdin.Close()
+
+	// 等待命令完成
+	if err := cmd.Wait(); err != nil {
+		output := stdout.String() + stderr.String()
+		return fmt.Errorf("修改root密码失败: %v, 输出: %s", err, output)
+	}
+
+	return nil
+}
+

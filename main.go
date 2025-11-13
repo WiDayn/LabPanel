@@ -70,6 +70,7 @@ func main() {
 			auth.POST("/lxc/create", handlers.CreateLxcContainer)
 			auth.DELETE("/lxc/delete", handlers.DeleteLxcContainer)
 			auth.POST("/lxc/restart", handlers.RestartLxcContainer)
+			auth.PUT("/lxc/password", handlers.ChangePasswordLxcContainer)
 			
 			// 文档管理
 			auth.GET("/documents", handlers.GetDocumentList)

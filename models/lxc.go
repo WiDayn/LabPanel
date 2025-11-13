@@ -27,3 +27,8 @@ type RestartLxcRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
+type ChangePasswordLxcRequest struct {
+	Name     string `json:"name" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
