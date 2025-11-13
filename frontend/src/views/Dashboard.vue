@@ -80,13 +80,11 @@
         <!-- 操作按钮 -->
         <Card class="p-6">
           <div class="flex gap-2">
-            <Button @click="saveAndRestart" :disabled="loading || saving">
-              {{ saving ? '保存中...' : '保存配置并重启服务' }}
-            </Button>
             <Button variant="outline" @click="loadProxies" :disabled="loading">
               重新加载
             </Button>
           </div>
+          <p class="text-sm text-gray-500 mt-2">提示：配置修改后会自动验证并热重载，无需手动重启</p>
         </Card>
       </div>
     </main>
@@ -147,7 +145,6 @@ const router = useRouter()
 const proxies = ref([])
 const serviceStatus = ref({ active: false, status: 'unknown', statusDetail: '' })
 const loading = ref(false)
-const saving = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const success = ref('')
@@ -206,13 +203,13 @@ const saveProxy = async () => {
         index: editingIndex.value,
         proxy: currentProxy.value,
       })
-      success.value = '代理更新成功'
+      success.value = '代理更新成功，已热重载'
       await loadProxies()
       closeDialog()
     } else {
       // 添加代理
       await api.post('/proxies', { proxy: currentProxy.value })
-      success.value = '代理添加成功'
+      success.value = '代理添加成功，已热重载'
       await loadProxies()
       closeDialog()
     }
@@ -236,7 +233,7 @@ const deleteProxy = async (index) => {
 
   try {
     await api.delete('/proxies', { data: { index } })
-    success.value = '代理删除成功'
+    success.value = '代理删除成功，已热重载'
     await loadProxies()
   } catch (err) {
     error.value = err.response?.data?.error || '删除代理失败'
@@ -257,29 +254,6 @@ const closeDialog = () => {
   }
 }
 
-const saveAndRestart = async () => {
-  saving.value = true
-  error.value = ''
-  success.value = ''
-
-  try {
-    // 代理的增删改已经自动保存了基础配置
-    // 这里只需要重启服务
-    await api.post('/restart')
-    
-    success.value = '配置已保存，服务已重启'
-    
-    // 延迟刷新状态
-    setTimeout(() => {
-      refreshStatus()
-      loadProxies()
-    }, 2000)
-  } catch (err) {
-    error.value = err.response?.data?.error || '重启失败'
-  } finally {
-    saving.value = false
-  }
-}
 
 const handleLogout = () => {
   localStorage.removeItem('token')

@@ -14,6 +14,7 @@ type Config struct {
 	AdminPassword string
 	TomlPath      string
 	ServiceName   string
+	FrpcPath      string
 }
 
 func Load() (*Config, error) {
@@ -23,6 +24,11 @@ func Load() (*Config, error) {
 		log.Printf("未找到 .env 文件，使用环境变量或默认值: %v", err)
 	}
 
+	frpcPath := getEnv("FRPC_PATH", "")
+	if frpcPath == "" {
+		log.Printf("警告: 未找到frpc，使用默认路径 %s，请通过FRPC_PATH环境变量设置正确的路径", frpcPath)
+	}
+
 	cfg := &Config{
 		Port:          getEnv("PORT", "8080"),
 		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
@@ -30,6 +36,7 @@ func Load() (*Config, error) {
 		AdminPassword: getEnv("ADMIN_PASSWORD", "admin123"),
 		TomlPath:      getEnv("TOML_PATH", "/etc/frp/frpc.toml"),
 		ServiceName:   getEnv("SERVICE_NAME", "frpc"),
+		FrpcPath:      frpcPath,
 	}
 
 	return cfg, nil

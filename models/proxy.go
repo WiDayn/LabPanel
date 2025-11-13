@@ -13,11 +13,17 @@ type AuthConfig struct {
 	Token  string `toml:"token"`
 }
 
+type WebServerConfig struct {
+	Addr string `toml:"addr"`
+	Port int    `toml:"port"`
+}
+
 type FrpConfig struct {
-	ServerAddr string     `toml:"serverAddr"`
-	ServerPort int        `toml:"serverPort"`
-	Auth       AuthConfig `toml:"auth"`
-	Proxies    []Proxy    `toml:"proxies"`
+	ServerAddr string          `toml:"serverAddr"`
+	ServerPort int             `toml:"serverPort"`
+	Auth       AuthConfig      `toml:"auth"`
+	WebServer  WebServerConfig `toml:"webServer"`
+	Proxies    []Proxy         `toml:"proxies"`
 }
 
 type ProxyListResponse struct {

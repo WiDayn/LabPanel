@@ -27,12 +27,19 @@ func UpdateBaseConfig(c *gin.Context) {
 	existingConfig.ServerAddr = req.ServerAddr
 	existingConfig.ServerPort = req.ServerPort
 	existingConfig.Auth = req.Auth
+	// 保留WebServer配置
+	if req.WebServer.Addr != "" {
+		existingConfig.WebServer.Addr = req.WebServer.Addr
+	}
+	if req.WebServer.Port != 0 {
+		existingConfig.WebServer.Port = req.WebServer.Port
+	}
 
-	if err := frpService.SaveConfig(existingConfig); err != nil {
+	if err := frpService.SaveAndReload(existingConfig); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "基础配置更新成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "基础配置更新成功，已热重载"})
 }
 
