@@ -3,9 +3,11 @@ package service
 import (
 	"LabPanel/config"
 	"LabPanel/models"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -19,6 +21,46 @@ func NewFrpConfigService() *FrpConfigService {
 	return &FrpConfigService{cfg: cfg}
 }
 
+// getCommentsPath 获取备注文件路径
+func (s *FrpConfigService) getCommentsPath() string {
+	dir := filepath.Dir(s.cfg.TomlPath)
+	return filepath.Join(dir, "proxy_comments.json")
+}
+
+// loadComments 加载备注
+func (s *FrpConfigService) loadComments() (models.ProxyComments, error) {
+	commentsPath := s.getCommentsPath()
+	data, err := os.ReadFile(commentsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(models.ProxyComments), nil
+		}
+		return nil, fmt.Errorf("读取备注文件失败: %v", err)
+	}
+
+	var comments models.ProxyComments
+	if err := json.Unmarshal(data, &comments); err != nil {
+		return nil, fmt.Errorf("解析备注文件失败: %v", err)
+	}
+
+	return comments, nil
+}
+
+// saveComments 保存备注
+func (s *FrpConfigService) saveComments(comments models.ProxyComments) error {
+	commentsPath := s.getCommentsPath()
+	data, err := json.MarshalIndent(comments, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化备注失败: %v", err)
+	}
+
+	if err := os.WriteFile(commentsPath, data, 0644); err != nil {
+		return fmt.Errorf("写入备注文件失败: %v", err)
+	}
+
+	return nil
+}
+
 func (s *FrpConfigService) GetConfig() (*models.FrpConfig, error) {
 	data, err := os.ReadFile(s.cfg.TomlPath)
 	if err != nil {
@@ -28,6 +70,19 @@ func (s *FrpConfigService) GetConfig() (*models.FrpConfig, error) {
 	var frpConfig models.FrpConfig
 	if err := toml.Unmarshal(data, &frpConfig); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	// 加载备注并合并到代理中
+	comments, err := s.loadComments()
+	if err != nil {
+		// 备注加载失败不影响主配置，只记录错误
+		_ = err
+	} else {
+		for i := range frpConfig.Proxies {
+			if comment, ok := comments[frpConfig.Proxies[i].Name]; ok {
+				frpConfig.Proxies[i].Comment = comment
+			}
+		}
 	}
 
 	return &frpConfig, nil
@@ -42,7 +97,45 @@ func (s *FrpConfigService) SaveConfig(frpConfig *models.FrpConfig) error {
 		frpConfig.WebServer.Port = 7400
 	}
 
-	data, err := toml.Marshal(frpConfig)
+	// 提取备注并保存到单独文件
+	comments := make(models.ProxyComments)
+	for _, proxy := range frpConfig.Proxies {
+		if proxy.Comment != "" {
+			comments[proxy.Name] = proxy.Comment
+		}
+	}
+	if err := s.saveComments(comments); err != nil {
+		return fmt.Errorf("保存备注失败: %v", err)
+	}
+
+	// 创建不包含comment的配置用于保存到toml
+	type FrpConfigForToml struct {
+		ServerAddr string          `toml:"serverAddr"`
+		ServerPort int             `toml:"serverPort"`
+		Auth       models.AuthConfig      `toml:"auth"`
+		WebServer  models.WebServerConfig `toml:"webServer"`
+		Proxies    []models.ProxyForToml  `toml:"proxies"`
+	}
+
+	configForToml := FrpConfigForToml{
+		ServerAddr: frpConfig.ServerAddr,
+		ServerPort: frpConfig.ServerPort,
+		Auth:       frpConfig.Auth,
+		WebServer:  frpConfig.WebServer,
+		Proxies:    make([]models.ProxyForToml, len(frpConfig.Proxies)),
+	}
+
+	for i, proxy := range frpConfig.Proxies {
+		configForToml.Proxies[i] = models.ProxyForToml{
+			Name:      proxy.Name,
+			Type:      proxy.Type,
+			LocalIP:   proxy.LocalIP,
+			LocalPort: proxy.LocalPort,
+			RemotePort: proxy.RemotePort,
+		}
+	}
+
+	data, err := toml.Marshal(configForToml)
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %v", err)
 	}
@@ -165,7 +258,22 @@ func (s *FrpConfigService) DeleteProxy(index int) error {
 		return fmt.Errorf("代理索引超出范围")
 	}
 
+	// 删除代理前，先删除对应的备注
+	deletedProxyName := frpConfig.Proxies[index].Name
 	frpConfig.Proxies = append(frpConfig.Proxies[:index], frpConfig.Proxies[index+1:]...)
-	return s.SaveAndReload(frpConfig)
+	
+	// 保存配置（这会更新备注文件，删除已删除代理的备注）
+	if err := s.SaveAndReload(frpConfig); err != nil {
+		return err
+	}
+
+	// 确保删除备注（如果SaveAndReload没有处理）
+	comments, err := s.loadComments()
+	if err == nil {
+		delete(comments, deletedProxyName)
+		s.saveComments(comments)
+	}
+
+	return nil
 }
 

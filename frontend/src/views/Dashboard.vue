@@ -55,6 +55,7 @@
                   <th class="text-left p-2">本地IP</th>
                   <th class="text-left p-2">本地端口</th>
                   <th class="text-left p-2">远程端口</th>
+                  <th class="text-left p-2">备注</th>
                   <th class="text-left p-2">操作</th>
                 </tr>
               </thead>
@@ -65,6 +66,7 @@
                   <td class="p-2">{{ proxy.localIP }}</td>
                   <td class="p-2">{{ proxy.localPort }}</td>
                   <td class="p-2">{{ proxy.remotePort }}</td>
+                  <td class="p-2 text-sm text-gray-600">{{ proxy.comment || '-' }}</td>
                   <td class="p-2">
                     <div class="flex gap-2">
                       <Button variant="outline" size="sm" @click="editProxy(index)">编辑</Button>
@@ -81,10 +83,9 @@
         <Card class="p-6">
           <div class="flex gap-2">
             <Button variant="outline" @click="loadProxies" :disabled="loading">
-              重新加载
+              重载配置
             </Button>
           </div>
-          <p class="text-sm text-gray-500 mt-2">提示：配置修改后会自动验证并热重载，无需手动重启</p>
         </Card>
       </div>
     </main>
@@ -119,6 +120,10 @@
           <div>
             <label class="block text-sm font-medium mb-2">远程端口</label>
             <Input v-model.number="currentProxy.remotePort" type="number" placeholder="20022" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-2">备注</label>
+            <Input v-model="currentProxy.comment" placeholder="可选，用于记录此映射的说明" />
           </div>
           <div class="flex gap-2 justify-end">
             <Button variant="outline" @click="closeDialog" :disabled="submitting">取消</Button>
@@ -156,6 +161,7 @@ const currentProxy = ref({
   localIP: '127.0.0.1',
   localPort: 22,
   remotePort: 20022,
+  comment: '',
 })
 
 const loadProxies = async () => {
@@ -197,10 +203,16 @@ const saveProxy = async () => {
   success.value = ''
 
   try {
-    if (editingIndex.value !== null) {
+    if (editingIndex.value !== null && editingIndex.value !== undefined) {
       // 更新代理
+      const indexValue = Number(editingIndex.value)
+      if (isNaN(indexValue)) {
+        error.value = '索引值无效'
+        submitting.value = false
+        return
+      }
       await api.put('/proxies', {
-        index: editingIndex.value,
+        index: indexValue,
         proxy: currentProxy.value,
       })
       success.value = '代理更新成功，已热重载'
@@ -251,6 +263,7 @@ const closeDialog = () => {
     localIP: '127.0.0.1',
     localPort: 22,
     remotePort: 20022,
+    comment: '',
   }
 }
 

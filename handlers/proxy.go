@@ -3,6 +3,7 @@ package handlers
 import (
 	"LabPanel/models"
 	"LabPanel/service"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -26,7 +27,7 @@ func GetProxyList(c *gin.Context) {
 func AddProxy(c *gin.Context) {
 	var req models.AddProxyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("请求参数错误: %v", err)})
 		return
 	}
 
@@ -42,12 +43,16 @@ func AddProxy(c *gin.Context) {
 func UpdateProxy(c *gin.Context) {
 	var req models.UpdateProxyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("请求参数错误: %v", err)})
 		return
 	}
 
 	frpService := service.NewFrpConfigService()
-	if err := frpService.UpdateProxy(req.Index, req.Proxy); err != nil {
+	if req.Index == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "索引字段不能为空"})
+		return
+	}
+	if err := frpService.UpdateProxy(*req.Index, req.Proxy); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
