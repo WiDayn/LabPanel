@@ -7,14 +7,20 @@
   },
   {
     "id": "容器内部相关",
-    "title": "容器内部相关",
-    "content": "目前固定容器系统为Ubuntu 22.04，Nvidia驱动版本为`580.105.08`\n容器内部驱动版本不可变更，不要尝试重装驱动\n\n如果意外重装/掉驱动，请考虑执行下面的指令重装驱动：\n```bash\nwget https://cn.download.nvidia.cn/XFree86/Linux-x86_64/580.105.08/NVIDIA-Linux-x86_64-580.105.08.run \u0026\u0026 chmod +x ./NVIDIA-Linux-x86_64-580.105.08.run \u0026\u0026 ./NVIDIA-Linux-x86_64-580.105.08.run --no-kernel-module\n```",
+    "title": "容器配置",
+    "content": "## 配额限制\n在 `LXC容器` 界面，首先关闭容器，然后点击 `配置` 修改配置文件\n内存限制： `limits.memory: xxxM`\nCPU限制： `limits.cpu.allowance: 10%`\n\n## Nvidia驱动\n\n目前固定容器系统为Ubuntu 22.04，Nvidia驱动版本为`580.105.08`\n容器内部驱动版本不可变更，不要尝试重装驱动\n\n如果意外重装/掉驱动，请考虑执行下面的指令重装驱动：\n```bash\nwget https://cn.download.nvidia.cn/XFree86/Linux-x86_64/580.105.08/NVIDIA-Linux-x86_64-580.105.08.run \u0026\u0026 chmod +x ./NVIDIA-Linux-x86_64-580.105.08.run \u0026\u0026 ./NVIDIA-Linux-x86_64-580.105.08.run --no-kernel-module\n```\n\n**Windows内没有GPU(因为是vm，涉及硬件直通问题无法实现)，仅用于部分软件操作**",
     "order": 1
   },
   {
     "id": "系统更新日志",
     "title": "系统更新日志 / TODO List",
-    "content": "## TODO List\n- [] 实现创建Windows系统\n- [] 实现自定义系统版本\n\n## 更新日志\n2025/11/13\n完成基础系统",
+    "content": "## TODO List\n- [] 实现面板容器的配额管理\n- [] 实现自定义系统版本\n\n## 更新日志\n2025/11/13\n完成基础系统",
     "order": 2
+  },
+  {
+    "id": "rustdesk中继服务器信息",
+    "title": "系统 / RustDesk 信息",
+    "content": "中继服务器配置\n```\nID服务器 47.86.7.202\n中继服务器 47.86.7.202\nAPI服务器 不填\nKey SqLDDG0yoZxHL2Mez9n0Ut51PCGbZs2LCtn2Kd90VEk=\n```\n\n宿主机信息\n```\nRustDesk ID: 14 966 754\nRustDesk 永久密码: !Pan13579xyz\n\nUbuntu User: pan\nUbuntu Password: !Pan13579xyz\n```\n\nWindows VM\n```\nRustDesk ID: 519 122 313\nRustDesk 永久密码: !Pan13579xyz\n\nWindows Account: LabUser\nWindows Password: !Pan13579xyz\n```\n\n宿主机Systemctl Service\n```\nLabPanel: vm.service\nfrpc: frp.service\n```",
+    "order": 3
   }
 ]
