@@ -15,6 +15,8 @@ type Config struct {
 	TomlPath      string
 	ServiceName   string
 	FrpcPath      string
+	DocsPath      string
+	UploadPath    string
 }
 
 func Load() (*Config, error) {
@@ -37,6 +39,8 @@ func Load() (*Config, error) {
 		TomlPath:      getEnv("TOML_PATH", "/etc/frp/frpc.toml"),
 		ServiceName:   getEnv("SERVICE_NAME", "frpc"),
 		FrpcPath:      frpcPath,
+		DocsPath:      getEnv("DOCS_PATH", "./docs"),
+		UploadPath:    getEnv("UPLOAD_PATH", "./uploads"),
 	}
 
 	return cfg, nil

@@ -37,6 +37,9 @@ func main() {
 	r.StaticFile("/favicon.ico", "./frontend/dist/favicon.ico")
 	r.StaticFile("/vite.svg", "./frontend/dist/vite.svg")
 	
+	// 上传文件静态服务
+	r.Static("/api/uploads", cfg.UploadPath)
+	
 	// API 路由必须在 NoRoute 之前定义
 
 	// API 路由
@@ -67,6 +70,16 @@ func main() {
 			auth.POST("/lxc/create", handlers.CreateLxcContainer)
 			auth.DELETE("/lxc/delete", handlers.DeleteLxcContainer)
 			auth.POST("/lxc/restart", handlers.RestartLxcContainer)
+			
+			// 文档管理
+			auth.GET("/documents", handlers.GetDocumentList)
+			auth.GET("/documents/:id", handlers.GetDocument)
+			auth.POST("/documents", handlers.CreateDocument)
+			auth.PUT("/documents", handlers.UpdateDocument)
+			auth.DELETE("/documents", handlers.DeleteDocument)
+			
+			// 图片上传
+			auth.POST("/upload/image", handlers.UploadImage)
 		}
 	}
 
