@@ -461,17 +461,26 @@ onMounted(() => {
   display: list-item;
 }
 
-.prose :deep(code) {
-  @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
-}
-
 .prose :deep(pre) {
-  @apply bg-gray-100 p-4 rounded mb-4 overflow-x-auto;
+  @apply bg-gray-100 p-4 rounded mb-4;
   display: block;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-all;
 }
 
 .prose :deep(pre code) {
   @apply bg-transparent p-0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-all;
+}
+
+.prose :deep(code) {
+  @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .prose :deep(img) {

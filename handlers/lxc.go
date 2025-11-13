@@ -69,3 +69,19 @@ func RestartLxcContainer(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "容器重启成功"})
 }
 
+func ChangePasswordLxcContainer(c *gin.Context) {
+	var req models.ChangePasswordLxcRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+
+	lxcService := service.NewLxcService()
+	if err := lxcService.ChangePassword(req.Name, req.Password); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
+}
+

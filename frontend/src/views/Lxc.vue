@@ -62,6 +62,7 @@
                   <td class="p-2 text-sm text-gray-600">{{ container.profiles || '-' }}</td>
                   <td class="p-2">
                     <div class="flex gap-2">
+                      <Button variant="outline" size="sm" @click="changePassword(container.name)">修改密码</Button>
                       <Button variant="outline" size="sm" @click="restartContainer(container.name)">重启</Button>
                       <Button variant="destructive" size="sm" @click="deleteContainer(container.name)">删除</Button>
                     </div>
@@ -107,6 +108,33 @@
         </div>
       </Card>
     </div>
+
+    <!-- 修改密码对话框 -->
+    <div
+      v-if="showPasswordDialog"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="closePasswordDialog"
+    >
+      <Card class="w-full max-w-md p-6 m-4">
+        <h3 class="text-lg font-semibold mb-4">修改密码</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-2">容器名称</label>
+            <Input :value="passwordContainer.name" disabled />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-2">新Root密码</label>
+            <Input v-model="passwordContainer.password" type="password" placeholder="请输入新密码" />
+          </div>
+          <div class="flex gap-2 justify-end">
+            <Button variant="outline" @click="closePasswordDialog" :disabled="changingPassword">取消</Button>
+            <Button @click="confirmChangePassword" :disabled="changingPassword">
+              {{ changingPassword ? '修改中...' : '确认修改' }}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
   </div>
 </template>
 
@@ -126,7 +154,13 @@ const creating = ref(false)
 const error = ref('')
 const success = ref('')
 const showCreateDialog = ref(false)
+const showPasswordDialog = ref(false)
+const changingPassword = ref(false)
 const newContainer = ref({
+  name: '',
+  password: '',
+})
+const passwordContainer = ref({
   name: '',
   password: '',
 })
@@ -205,6 +239,49 @@ const restartContainer = async (name) => {
   } catch (err) {
     error.value = err.response?.data?.error || '重启容器失败'
   }
+}
+
+const changePassword = (name) => {
+  passwordContainer.value = {
+    name: name,
+    password: '',
+  }
+  showPasswordDialog.value = true
+  error.value = ''
+  success.value = ''
+}
+
+const confirmChangePassword = async () => {
+  if (!passwordContainer.value.password) {
+    error.value = '请输入新密码'
+    return
+  }
+
+  changingPassword.value = true
+  error.value = ''
+  success.value = ''
+
+  try {
+    await api.put('/lxc/password', {
+      name: passwordContainer.value.name,
+      password: passwordContainer.value.password,
+    })
+    success.value = '密码修改成功'
+    closePasswordDialog()
+  } catch (err) {
+    error.value = err.response?.data?.error || '修改密码失败'
+  } finally {
+    changingPassword.value = false
+  }
+}
+
+const closePasswordDialog = () => {
+  showPasswordDialog.value = false
+  passwordContainer.value = {
+    name: '',
+    password: '',
+  }
+  error.value = ''
 }
 
 const closeCreateDialog = () => {
