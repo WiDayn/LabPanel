@@ -54,7 +54,7 @@
                   <th class="text-left p-2">类型</th>
                   <th class="text-left p-2">本地IP</th>
                   <th class="text-left p-2">本地端口</th>
-                  <th class="text-left p-2">远程端口</th>
+                  <th class="text-left p-2">映射地址</th>
                   <th class="text-left p-2">备注</th>
                   <th class="text-left p-2">操作</th>
                 </tr>
@@ -65,7 +65,12 @@
                   <td class="p-2">{{ proxy.type }}</td>
                   <td class="p-2">{{ proxy.localIP }}</td>
                   <td class="p-2">{{ proxy.localPort }}</td>
-                  <td class="p-2">{{ proxy.remotePort }}</td>
+                  <td class="p-2">
+                    <span v-if="frpConfig.serverAddr">
+                      {{ frpConfig.serverAddr }}:{{ proxy.remotePort }}
+                    </span>
+                    <span v-else>{{ proxy.remotePort }}</span>
+                  </td>
                   <td class="p-2 text-sm text-gray-600">{{ proxy.comment || '-' }}</td>
                   <td class="p-2">
                     <div class="flex gap-2">
@@ -148,6 +153,7 @@ import Navigation from '@/components/Navigation.vue'
 
 const router = useRouter()
 const proxies = ref([])
+const frpConfig = ref({ serverAddr: '', serverPort: 0 })
 const serviceStatus = ref({ active: false, status: 'unknown', statusDetail: '' })
 const loading = ref(false)
 const submitting = ref(false)
@@ -171,6 +177,13 @@ const loadProxies = async () => {
 
   try {
     const response = await api.get('/proxies')
+    // 保存配置信息（包含ServerAddr）
+    if (response.data.config) {
+      frpConfig.value = {
+        serverAddr: response.data.config.serverAddr || '',
+        serverPort: response.data.config.serverPort || 0,
+      }
+    }
     // 只使用代理列表，基础配置由后端自动保持
     proxies.value = response.data.proxies || []
   } catch (err) {

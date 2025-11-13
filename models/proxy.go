@@ -22,21 +22,21 @@ type ProxyForToml struct {
 }
 
 type AuthConfig struct {
-	Method string `toml:"method"`
-	Token  string `toml:"token"`
+	Method string `json:"method" toml:"method"`
+	Token  string `json:"token" toml:"token"`
 }
 
 type WebServerConfig struct {
-	Addr string `toml:"addr"`
-	Port int    `toml:"port"`
+	Addr string `json:"addr" toml:"addr"`
+	Port int    `json:"port" toml:"port"`
 }
 
 type FrpConfig struct {
-	ServerAddr string          `toml:"serverAddr"`
-	ServerPort int             `toml:"serverPort"`
-	Auth       AuthConfig      `toml:"auth"`
-	WebServer  WebServerConfig `toml:"webServer"`
-	Proxies    []Proxy         `toml:"proxies"`
+	ServerAddr string          `json:"serverAddr" toml:"serverAddr"`
+	ServerPort int             `json:"serverPort" toml:"serverPort"`
+	Auth       AuthConfig      `json:"auth" toml:"auth"`
+	WebServer  WebServerConfig `json:"webServer" toml:"webServer"`
+	Proxies    []Proxy         `json:"proxies" toml:"proxies"`
 }
 
 type ProxyListResponse struct {
