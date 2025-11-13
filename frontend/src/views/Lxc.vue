@@ -38,7 +38,6 @@
                   <th class="text-left p-2">架构</th>
                   <th class="text-left p-2">IPv4</th>
                   <th class="text-left p-2">IPv6</th>
-                  <th class="text-left p-2">配置集</th>
                   <th class="text-left p-2">操作</th>
                 </tr>
               </thead>
@@ -59,9 +58,33 @@
                   <td class="p-2">{{ container.arch }}</td>
                   <td class="p-2">{{ container.ipv4 || '-' }}</td>
                   <td class="p-2">{{ container.ipv6 || '-' }}</td>
-                  <td class="p-2 text-sm text-gray-600">{{ container.profiles || '-' }}</td>
                   <td class="p-2">
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 flex-wrap">
+                      <Button 
+                        v-if="container.state !== 'Running'" 
+                        variant="outline" 
+                        size="sm" 
+                        @click="startContainer(container.name)"
+                      >
+                        开启
+                      </Button>
+                      <Button 
+                        v-if="container.state === 'Running'" 
+                        variant="outline" 
+                        size="sm" 
+                        @click="stopContainer(container.name)"
+                      >
+                        关机
+                      </Button>
+                      <Button 
+                        v-if="container.state === 'Running'" 
+                        variant="outline" 
+                        size="sm" 
+                        @click="forceStopContainer(container.name)"
+                      >
+                        强制关机
+                      </Button>
+                      <Button variant="outline" size="sm" @click="showConfig(container.name)">配置</Button>
                       <Button variant="outline" size="sm" @click="changePassword(container.name)">修改密码</Button>
                       <Button variant="outline" size="sm" @click="restartContainer(container.name)">重启</Button>
                       <Button variant="destructive" size="sm" @click="deleteContainer(container.name)">删除</Button>
@@ -103,6 +126,41 @@
             <Button variant="outline" @click="closeCreateDialog" :disabled="creating">取消</Button>
             <Button @click="createContainer" :disabled="creating">
               {{ creating ? '创建中...' : '创建' }}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+
+    <!-- 配置编辑对话框 -->
+    <div
+      v-if="showConfigDialog"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="closeConfigDialog"
+    >
+      <Card class="w-full max-w-4xl p-6 m-4 max-h-[90vh] flex flex-col">
+        <h3 class="text-lg font-semibold mb-4">容器配置 - {{ configContainer.name }}</h3>
+        <div v-if="loadingConfig" class="flex-1 flex items-center justify-center py-8">
+          <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p class="text-gray-600">正在加载配置...</p>
+          </div>
+        </div>
+        <div v-else class="flex-1 flex flex-col space-y-4 min-h-0">
+          <div class="flex-1 min-h-0">
+            <label class="block text-sm font-medium mb-2">配置文件 (YAML)</label>
+            <textarea
+              v-model="configContent"
+              class="w-full h-full min-h-[400px] p-3 border border-gray-300 rounded-md font-mono text-sm"
+              style="font-family: 'Courier New', monospace;"
+              spellcheck="false"
+            ></textarea>
+          </div>
+          <div v-if="configError" class="text-red-500 text-sm">{{ configError }}</div>
+          <div class="flex gap-2 justify-end">
+            <Button variant="outline" @click="closeConfigDialog" :disabled="savingConfig">取消</Button>
+            <Button @click="saveConfig" :disabled="savingConfig">
+              {{ savingConfig ? '保存中...' : '保存' }}
             </Button>
           </div>
         </div>
@@ -156,6 +214,12 @@ const success = ref('')
 const showCreateDialog = ref(false)
 const showPasswordDialog = ref(false)
 const changingPassword = ref(false)
+const showConfigDialog = ref(false)
+const configContainer = ref({ name: '' })
+const configContent = ref('')
+const loadingConfig = ref(false)
+const savingConfig = ref(false)
+const configError = ref('')
 const newContainer = ref({
   name: '',
   password: '',
@@ -241,6 +305,58 @@ const restartContainer = async (name) => {
   }
 }
 
+const startContainer = async (name) => {
+  error.value = ''
+  success.value = ''
+
+  try {
+    await api.post('/lxc/start', { name })
+    success.value = '容器启动成功'
+    // 延迟刷新列表
+    setTimeout(() => {
+      loadContainers()
+    }, 1000)
+  } catch (err) {
+    error.value = err.response?.data?.error || '启动容器失败'
+  }
+}
+
+const stopContainer = async (name) => {
+  error.value = ''
+  success.value = ''
+
+  try {
+    await api.post('/lxc/stop', { name })
+    success.value = '容器已关机'
+    // 延迟刷新列表
+    setTimeout(() => {
+      loadContainers()
+    }, 1000)
+  } catch (err) {
+    error.value = err.response?.data?.error || '关机失败'
+  }
+}
+
+const forceStopContainer = async (name) => {
+  error.value = ''
+  success.value = ''
+
+  if (!confirm('确定要强制关机吗？这可能会丢失未保存的数据。')) {
+    return
+  }
+
+  try {
+    await api.post('/lxc/force-stop', { name })
+    success.value = '容器已强制关机'
+    // 延迟刷新列表
+    setTimeout(() => {
+      loadContainers()
+    }, 1000)
+  } catch (err) {
+    error.value = err.response?.data?.error || '强制关机失败'
+  }
+}
+
 const changePassword = (name) => {
   passwordContainer.value = {
     name: name,
@@ -282,6 +398,57 @@ const closePasswordDialog = () => {
     password: '',
   }
   error.value = ''
+}
+
+const showConfig = async (name) => {
+  configContainer.value = { name }
+  configContent.value = ''
+  configError.value = ''
+  showConfigDialog.value = true
+  loadingConfig.value = true
+
+  try {
+    const response = await api.get(`/lxc/config/${encodeURIComponent(name)}`)
+    configContent.value = response.data.config || ''
+  } catch (err) {
+    configError.value = err.response?.data?.error || '加载配置失败'
+  } finally {
+    loadingConfig.value = false
+  }
+}
+
+const saveConfig = async () => {
+  if (!configContainer.value.name) {
+    configError.value = '容器名称不能为空'
+    return
+  }
+
+  savingConfig.value = true
+  configError.value = ''
+
+  try {
+    await api.put('/lxc/config', {
+      name: configContainer.value.name,
+      config: configContent.value,
+    })
+    success.value = '配置保存成功'
+    closeConfigDialog()
+    // 延迟刷新列表
+    setTimeout(() => {
+      loadContainers()
+    }, 1000)
+  } catch (err) {
+    configError.value = err.response?.data?.error || '保存配置失败'
+  } finally {
+    savingConfig.value = false
+  }
+}
+
+const closeConfigDialog = () => {
+  showConfigDialog.value = false
+  configContainer.value = { name: '' }
+  configContent.value = ''
+  configError.value = ''
 }
 
 const closeCreateDialog = () => {

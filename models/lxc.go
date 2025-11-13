@@ -32,3 +32,27 @@ type ChangePasswordLxcRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type StartLxcRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type StopLxcRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type ForceStopLxcRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type GetLxcConfigRequest struct {
+	Name string `uri:"name" binding:"required"`
+}
+
+type GetLxcConfigResponse struct {
+	Config string `json:"config"`
+}
+
+type UpdateLxcConfigRequest struct {
+	Name   string `json:"name" binding:"required"`
+	Config string `json:"config" binding:"required"`
+}

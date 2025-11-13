@@ -36,17 +36,17 @@ func main() {
 	r.Static("/assets", "./frontend/dist/assets")
 	r.StaticFile("/favicon.ico", "./frontend/dist/favicon.ico")
 	r.StaticFile("/vite.svg", "./frontend/dist/vite.svg")
-	
+
 	// 上传文件静态服务
 	r.Static("/api/uploads", cfg.UploadPath)
-	
+
 	// API 路由必须在 NoRoute 之前定义
 
 	// API 路由
 	api := r.Group("/api")
 	{
 		api.POST("/login", handlers.Login)
-		
+
 		// 需要鉴权的路由
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())
@@ -55,30 +55,35 @@ func main() {
 			auth.PUT("/config", handlers.UpdateConfig)
 			auth.POST("/restart", handlers.RestartService)
 			auth.GET("/status", handlers.GetServiceStatus)
-			
+
 			// 代理管理
 			auth.GET("/proxies", handlers.GetProxyList)
 			auth.POST("/proxies", handlers.AddProxy)
 			auth.PUT("/proxies", handlers.UpdateProxy)
 			auth.DELETE("/proxies", handlers.DeleteProxy)
-			
+
 			// 基础配置更新
 			auth.PUT("/config/base", handlers.UpdateBaseConfig)
-			
+
 			// LXC容器管理
 			auth.GET("/lxc/list", handlers.GetLxcList)
 			auth.POST("/lxc/create", handlers.CreateLxcContainer)
 			auth.DELETE("/lxc/delete", handlers.DeleteLxcContainer)
 			auth.POST("/lxc/restart", handlers.RestartLxcContainer)
+			auth.POST("/lxc/start", handlers.StartLxcContainer)
+			auth.POST("/lxc/stop", handlers.StopLxcContainer)
+			auth.POST("/lxc/force-stop", handlers.ForceStopLxcContainer)
+			auth.GET("/lxc/config/:name", handlers.GetLxcContainerConfig)
+			auth.PUT("/lxc/config", handlers.UpdateLxcContainerConfig)
 			auth.PUT("/lxc/password", handlers.ChangePasswordLxcContainer)
-			
+
 			// 文档管理
 			auth.GET("/documents", handlers.GetDocumentList)
 			auth.GET("/documents/:id", handlers.GetDocument)
 			auth.POST("/documents", handlers.CreateDocument)
 			auth.PUT("/documents", handlers.UpdateDocument)
 			auth.DELETE("/documents", handlers.DeleteDocument)
-			
+
 			// 图片上传
 			auth.POST("/upload/image", handlers.UploadImage)
 		}
@@ -101,4 +106,3 @@ func main() {
 		log.Fatalf("服务器启动失败: %v", err)
 	}
 }
-
