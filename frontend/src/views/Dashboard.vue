@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-gray-50">
     <header class="bg-white shadow-sm border-b">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-semibold">LabPanel 配置管理</h1>
+        <h1 class="text-xl font-semibold">FRP 配置管理</h1>
         <Button variant="outline" @click="handleLogout">退出登录</Button>
       </div>
       <Navigation />
@@ -38,7 +38,12 @@
         <Card class="p-6">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold">代理映射</h2>
-            <Button @click="showAddDialog = true">新增代理</Button>
+            <div class="flex gap-2">
+              <Button variant="outline" @click="loadProxies" :disabled="loading">
+                重载配置
+              </Button>
+              <Button @click="showAddDialog = true">新增代理</Button>
+            </div>
           </div>
           <div v-if="error" class="mb-4 text-red-500 text-sm">{{ error }}</div>
           <div v-if="success" class="mb-4 text-green-500 text-sm">{{ success }}</div>
@@ -81,15 +86,6 @@
                 </tr>
               </tbody>
             </table>
-          </div>
-        </Card>
-
-        <!-- 操作按钮 -->
-        <Card class="p-6">
-          <div class="flex gap-2">
-            <Button variant="outline" @click="loadProxies" :disabled="loading">
-              重载配置
-            </Button>
           </div>
         </Card>
       </div>
