@@ -52,6 +52,9 @@ func main() {
 		auth.Use(middleware.AuthMiddleware())
 		{
 			auth.GET("/check", handlers.GetEnvironmentCheck)
+			auth.GET("/app-config", handlers.GetAppConfig)
+			auth.GET("/host-info", handlers.GetHostInfo)
+			auth.PUT("/app-config", handlers.UpdateAppConfig)
 			auth.GET("/config", handlers.GetConfig)
 			auth.PUT("/config", handlers.UpdateConfig)
 			auth.POST("/restart", handlers.RestartService)
