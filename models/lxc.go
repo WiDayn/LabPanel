@@ -2,6 +2,12 @@ package models
 
 import "time"
 
+const (
+	LxcCreateSourceDefaultImage = "default_image"
+	LxcCreateSourceCustomImage  = "custom_image"
+	LxcCreateSourceBackup       = "backup"
+)
+
 type LxcContainer struct {
 	Name     string `json:"name"`
 	State    string `json:"state"`
@@ -17,8 +23,11 @@ type LxcListResponse struct {
 }
 
 type CreateLxcRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Name       string `json:"name" binding:"required"`
+	Password   string `json:"password" binding:"required"`
+	SourceType string `json:"sourceType"`
+	Image      string `json:"image"`
+	BackupFile string `json:"backupFile"`
 }
 
 type DeleteLxcRequest struct {
@@ -78,6 +87,18 @@ type BackupLxcResponse struct {
 
 type LxcBackupStatusListResponse struct {
 	Backups []LxcBackupStatus `json:"backups"`
+}
+
+type LxcBackupArchive struct {
+	Name         string    `json:"name"`
+	Path         string    `json:"path"`
+	SizeBytes    int64     `json:"sizeBytes"`
+	ModifiedAt   time.Time `json:"modifiedAt"`
+	DisplayLabel string    `json:"displayLabel"`
+}
+
+type LxcBackupArchiveListResponse struct {
+	Archives []LxcBackupArchive `json:"archives"`
 }
 
 type GetLxcConfigRequest struct {

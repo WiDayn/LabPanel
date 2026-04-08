@@ -131,7 +131,7 @@
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold">容器列表</h2>
             <div class="flex gap-2">
-              <Button @click="showCreateDialog = true">新增容器</Button>
+              <Button @click="openCreateDialog">新增容器</Button>
               <Button @click="loadContainers" :disabled="loading">刷新</Button>
             </div>
           </div>
@@ -279,9 +279,69 @@
             <Input v-model="newContainer.name" placeholder="请输入容器名称" />
           </div>
           <div>
-            <label class="block text-sm font-medium mb-2">镜像</label>
+            <label class="block text-sm font-medium mb-2">创建来源</label>
+            <div class="grid gap-2 sm:grid-cols-3">
+              <label class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm" :class="newContainer.sourceType === 'default_image' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+                <input v-model="newContainer.sourceType" type="radio" class="mt-1" value="default_image" />
+                <span>
+                  默认镜像
+                </span>
+              </label>
+              <label class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm" :class="newContainer.sourceType === 'custom_image' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+                <input v-model="newContainer.sourceType" type="radio" class="mt-1" value="custom_image" />
+                <span>
+                  自定义镜像
+                </span>
+              </label>
+              <label class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm" :class="newContainer.sourceType === 'backup' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+                <input v-model="newContainer.sourceType" type="radio" class="mt-1" value="backup" />
+                <span>
+                  备份恢复
+                </span>
+              </label>
+            </div>
+          </div>
+          <div v-if="newContainer.sourceType === 'default_image'">
+            <label class="block text-sm font-medium mb-2">默认镜像</label>
             <Input :value="appConfig.lxcImage || 'ubuntu:22.04'" disabled />
-            <p class="mt-1 text-xs text-gray-500">如需切换版本，请先修改上方“默认容器镜像”设置。</p>
+            <p class="mt-1 text-xs text-gray-500">使用上方“容器默认配置”中的默认镜像创建。</p>
+          </div>
+          <div v-if="newContainer.sourceType === 'custom_image'">
+            <label class="block text-sm font-medium mb-2">自定义镜像</label>
+            <Input v-model="newContainer.image" placeholder="例如 ubuntu:24.04 / images:debian/12" />
+            <p class="mt-1 text-xs text-gray-500">这里填写要传给 `lxc launch` 的镜像名称。</p>
+          </div>
+          <div v-if="newContainer.sourceType === 'backup'">
+            <div class="flex items-center justify-between gap-3">
+              <label class="block text-sm font-medium">选择备份包</label>
+              <Button variant="outline" size="sm" @click="loadBackupArchives({ silent: false })" :disabled="loadingBackupArchives">
+                {{ loadingBackupArchives ? '刷新中...' : '刷新列表' }}
+              </Button>
+            </div>
+            <select
+              v-model="newContainer.backupFile"
+              class="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">请选择备份文件</option>
+              <option v-for="archive in backupArchives" :key="archive.path" :value="archive.name">
+                {{ archive.displayLabel }}
+              </option>
+            </select>
+            <div v-if="backupArchives.length" class="mt-3 max-h-40 overflow-auto rounded-lg border border-gray-200">
+              <div
+                v-for="archive in backupArchives"
+                :key="archive.path"
+                class="border-b border-gray-100 px-3 py-2 text-xs last:border-b-0"
+              >
+                <div class="font-medium text-gray-800 break-all">{{ archive.name }}</div>
+                <div class="mt-1 text-gray-500">
+                  {{ formatArchiveMeta(archive) }}
+                </div>
+              </div>
+            </div>
+            <p v-else class="mt-2 text-xs text-gray-500">
+              {{ loadingBackupArchives ? '正在读取备份列表...' : '当前备份目录下没有 .tar.gz 文件' }}
+            </p>
           </div>
           <div>
             <label class="block text-sm font-medium mb-2">Root密码</label>
@@ -379,7 +439,9 @@ const creating = ref(false)
 const loadingAppConfig = ref(false)
 const savingAppConfig = ref(false)
 const loadingHostInfo = ref(false)
+const loadingBackupArchives = ref(false)
 const backupStatuses = ref({})
+const backupArchives = ref([])
 const error = ref('')
 const success = ref('')
 const showCreateDialog = ref(false)
@@ -403,6 +465,9 @@ const hostInfo = ref({
 const newContainer = ref({
   name: '',
   password: '',
+  sourceType: 'default_image',
+  image: '',
+  backupFile: '',
 })
 const passwordContainer = ref({
   name: '',
@@ -483,6 +548,21 @@ const loadHostInfo = async () => {
   }
 }
 
+const loadBackupArchives = async ({ silent = true } = {}) => {
+  loadingBackupArchives.value = true
+
+  try {
+    const response = await api.get('/lxc/backup-archives')
+    backupArchives.value = response.data?.archives || []
+  } catch (err) {
+    if (!silent) {
+      error.value = err.response?.data?.error || '加载备份文件列表失败'
+    }
+  } finally {
+    loadingBackupArchives.value = false
+  }
+}
+
 const saveAppConfig = async () => {
   if (!appConfig.value.lxcImage) {
     error.value = '请填写默认容器镜像'
@@ -518,6 +598,16 @@ const createContainer = async () => {
     return
   }
 
+  if (newContainer.value.sourceType === 'custom_image' && !newContainer.value.image) {
+    error.value = '请填写自定义镜像'
+    return
+  }
+
+  if (newContainer.value.sourceType === 'backup' && !newContainer.value.backupFile) {
+    error.value = '请选择备份文件'
+    return
+  }
+
   creating.value = true
   error.value = ''
   success.value = ''
@@ -526,6 +616,9 @@ const createContainer = async () => {
     await api.post('/lxc/create', {
       name: newContainer.value.name,
       password: newContainer.value.password,
+      sourceType: newContainer.value.sourceType,
+      image: newContainer.value.image,
+      backupFile: newContainer.value.backupFile,
     })
     success.value = '容器创建成功'
     creating.value = false
@@ -790,8 +883,33 @@ const closeCreateDialog = () => {
   newContainer.value = {
     name: '',
     password: '',
+    sourceType: 'default_image',
+    image: '',
+    backupFile: '',
   }
   error.value = ''
+}
+
+const openCreateDialog = async () => {
+  showCreateDialog.value = true
+  error.value = ''
+  success.value = ''
+  newContainer.value = {
+    name: '',
+    password: '',
+    sourceType: 'default_image',
+    image: '',
+    backupFile: '',
+  }
+  await loadBackupArchives()
+}
+
+const formatArchiveMeta = (archive) => {
+  const size = typeof archive.sizeBytes === 'number'
+    ? `${(archive.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+    : ''
+  const time = archive.modifiedAt ? formatBackupTime(archive.modifiedAt) : ''
+  return [time, size, archive.path].filter(Boolean).join(' · ')
 }
 
 const checkEnvironment = async () => {
