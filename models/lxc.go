@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type LxcContainer struct {
 	Name     string `json:"name"`
 	State    string `json:"state"`
@@ -42,6 +44,40 @@ type StopLxcRequest struct {
 
 type ForceStopLxcRequest struct {
 	Name string `json:"name" binding:"required"`
+}
+
+type BackupLxcRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+const (
+	LxcBackupStatusQueued    = "queued"
+	LxcBackupStatusRunning   = "running"
+	LxcBackupStatusCompleted = "completed"
+	LxcBackupStatusFailed    = "failed"
+)
+
+type LxcBackupStatus struct {
+	Name          string     `json:"name"`
+	TaskID        string     `json:"taskId"`
+	Status        string     `json:"status"`
+	Stage         string     `json:"stage"`
+	Progress      int        `json:"progress"`
+	Message       string     `json:"message"`
+	ArchivePath   string     `json:"archivePath"`
+	ExportedFiles []string   `json:"exportedFiles"`
+	StartedAt     time.Time  `json:"startedAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	FinishedAt    *time.Time `json:"finishedAt"`
+}
+
+type BackupLxcResponse struct {
+	Message string          `json:"message"`
+	Backup  LxcBackupStatus `json:"backup"`
+}
+
+type LxcBackupStatusListResponse struct {
+	Backups []LxcBackupStatus `json:"backups"`
 }
 
 type GetLxcConfigRequest struct {
