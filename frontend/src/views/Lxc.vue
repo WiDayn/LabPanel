@@ -184,7 +184,7 @@
             <table class="w-full border-collapse table-fixed">
               <thead>
                 <tr class="border-b">
-                  <th class="text-left p-2 w-32">名称</th>
+                  <th class="text-left p-2 w-48">名称</th>
                   <th class="text-left p-2 w-24">状态</th>
                   <th class="text-left p-2 w-36">IPv4</th>
                   <th class="text-left p-2 w-48">IPv6</th>
