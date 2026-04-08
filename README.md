@@ -76,6 +76,7 @@ FRPC_PATH=/usr/local/bin/frpc
 
 DOCS_PATH=./docs
 UPLOAD_PATH=./uploads
+LXC_IMAGE=ubuntu:22.04
 ```
 
 说明：
@@ -89,6 +90,7 @@ UPLOAD_PATH=./uploads
 - `FRPC_PATH`: `frpc` 可执行文件路径
 - `DOCS_PATH`: 文档目录
 - `UPLOAD_PATH`: 上传目录
+- `LXC_IMAGE`: 新建 LXC 容器时使用的默认镜像
 
 如果没有设置 `.env`，程序会使用默认值。
 
@@ -170,10 +172,27 @@ sudo systemctl status frpc --no-pager
 
 ### Ubuntu / Debian
 
+很多较新的 Ubuntu / Debian 环境里，`lxd` 和 `lxd-client` 已经不能直接通过 `apt install` 获取。推荐使用官方文档当前主推的 `snap` 安装方式。
+
+先安装 `snapd`：
+
 ```bash
 sudo apt-get update
-sudo apt-get install -y lxd lxd-client
+sudo apt-get install -y snapd
+```
+
+再安装 LXD：
+
+```bash
+sudo snap install lxd
 sudo lxd init --auto
+```
+
+给当前用户授予访问权限：
+
+```bash
+getent group lxd | grep -qwF "$USER" || sudo usermod -aG lxd "$USER"
+newgrp lxd
 ```
 
 安装完成后确认：
@@ -296,6 +315,21 @@ systemctl status frpc --no-pager
 ```bash
 lxc version
 lxc list
+```
+
+如果你在安装阶段看到下面这种错误：
+
+```text
+E: 软件包 lxd 没有可安装候选
+E: 无法定位软件包 lxd-client
+```
+
+通常表示当前发行版的软件源不再提供旧的 `apt` 包。请改用：
+
+```bash
+sudo apt-get install -y snapd
+sudo snap install lxd
+sudo lxd init --auto
 ```
 
 ### 3. 构建失败，提示没有 `pnpm`

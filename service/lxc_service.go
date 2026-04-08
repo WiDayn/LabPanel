@@ -1,6 +1,7 @@
 package service
 
 import (
+	"LabPanel/config"
 	"LabPanel/models"
 	"bytes"
 	"encoding/json"
@@ -10,10 +11,13 @@ import (
 	"time"
 )
 
-type LxcService struct{}
+type LxcService struct {
+	cfg *config.Config
+}
 
 func NewLxcService() *LxcService {
-	return &LxcService{}
+	cfg, _ := config.Load()
+	return &LxcService{cfg: cfg}
 }
 
 // waitForContainerRunning 等待容器运行，最多等待60秒
@@ -351,8 +355,13 @@ func min(a, b int) int {
 }
 
 func (s *LxcService) CreateContainer(name, password string) error {
+	image := "ubuntu:22.04"
+	if s.cfg != nil && strings.TrimSpace(s.cfg.LxcImage) != "" {
+		image = strings.TrimSpace(s.cfg.LxcImage)
+	}
+
 	// 1. 创建容器
-	cmd := exec.Command("lxc", "launch", "ubuntu:22.04", name, "-c", "nvidia.runtime=true")
+	cmd := exec.Command("lxc", "launch", image, name, "-c", "nvidia.runtime=true")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		outputStr := string(output)
@@ -363,7 +372,7 @@ func (s *LxcService) CreateContainer(name, password string) error {
 			// 等待容器创建完成
 			s.waitForContainerRunning(name, 60)
 		} else {
-			return fmt.Errorf("创建容器失败: %v, 输出: %s", err, outputStr)
+			return fmt.Errorf("创建容器失败(镜像: %s): %v, 输出: %s", image, err, outputStr)
 		}
 	}
 

@@ -10,6 +10,62 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
+        <Card class="p-4">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold">宿主机 IP</h2>
+              <p class="mt-1 text-sm text-gray-600">
+                容器内访问宿主机时，优先使用
+                <span class="font-medium text-gray-800">{{ hostInfo.recommendedContainerHostIP || '-' }}</span>
+              </p>
+            </div>
+            <Button variant="outline" size="sm" @click="loadHostInfo" :disabled="loadingHostInfo">
+              {{ loadingHostInfo ? '刷新中...' : '刷新 IP' }}
+            </Button>
+          </div>
+          <div class="mt-3 grid gap-3 md:grid-cols-2">
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div class="text-xs font-medium text-gray-500">容器访问宿主机</div>
+              <div class="mt-1 break-all text-sm font-medium text-gray-900">
+                {{ hostInfo.recommendedContainerHostIP || '未检测到' }}
+              </div>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div class="text-xs font-medium text-gray-500">宿主机局域网 IP</div>
+              <div class="mt-1 break-all text-sm font-medium text-gray-900">
+                {{ hostInfo.lanIPs.length ? hostInfo.lanIPs.join(' / ') : '未检测到' }}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card class="p-6">
+          <div class="flex items-center justify-between gap-4 mb-4">
+            <div>
+              <h2 class="text-lg font-semibold">默认容器镜像</h2>
+              <p class="mt-1 text-sm text-gray-600">新建容器时会使用这里设置的镜像，例如 `ubuntu:22.04` 或 `ubuntu:24.04`。</p>
+            </div>
+          </div>
+          <div class="max-w-xl space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-2">LXC 镜像</label>
+              <Input
+                v-model="appConfig.lxcImage"
+                :disabled="savingAppConfig || loadingAppConfig"
+                placeholder="ubuntu:22.04"
+              />
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm text-gray-500">
+                当前新建容器默认使用：<span class="font-medium text-gray-700">{{ appConfig.lxcImage || 'ubuntu:22.04' }}</span>
+              </p>
+              <Button @click="saveAppConfig" :disabled="savingAppConfig || loadingAppConfig">
+                {{ savingAppConfig ? '保存中...' : '保存镜像设置' }}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
         <Card
           v-if="environmentCheck && !environmentCheck.lxc.ready"
           class="p-6 border-amber-200 bg-amber-50"
@@ -157,6 +213,11 @@
             <Input v-model="newContainer.name" placeholder="请输入容器名称" />
           </div>
           <div>
+            <label class="block text-sm font-medium mb-2">镜像</label>
+            <Input :value="appConfig.lxcImage || 'ubuntu:22.04'" disabled />
+            <p class="mt-1 text-xs text-gray-500">如需切换版本，请先修改上方“默认容器镜像”设置。</p>
+          </div>
+          <div>
             <label class="block text-sm font-medium mb-2">Root密码</label>
             <Input v-model="newContainer.password" type="password" placeholder="请输入root密码" />
           </div>
@@ -249,6 +310,9 @@ const environmentCheck = ref(null)
 const checkingEnvironment = ref(false)
 const loading = ref(false)
 const creating = ref(false)
+const loadingAppConfig = ref(false)
+const savingAppConfig = ref(false)
+const loadingHostInfo = ref(false)
 const error = ref('')
 const success = ref('')
 const showCreateDialog = ref(false)
@@ -260,6 +324,14 @@ const configContent = ref('')
 const loadingConfig = ref(false)
 const savingConfig = ref(false)
 const configError = ref('')
+const appConfig = ref({
+  lxcImage: 'ubuntu:22.04',
+})
+const hostInfo = ref({
+  recommendedContainerHostIP: '',
+  lanIPs: [],
+  bridgeIPs: [],
+})
 const newContainer = ref({
   name: '',
   password: '',
@@ -285,6 +357,61 @@ const loadContainers = async () => {
     error.value = err.response?.data?.error || '加载容器列表失败'
   } finally {
     loading.value = false
+  }
+}
+
+const loadAppConfig = async () => {
+  loadingAppConfig.value = true
+
+  try {
+    const response = await api.get('/app-config')
+    appConfig.value = {
+      lxcImage: response.data.lxcImage || 'ubuntu:22.04',
+    }
+  } catch (err) {
+    error.value = err.response?.data?.error || '加载镜像配置失败'
+  } finally {
+    loadingAppConfig.value = false
+  }
+}
+
+const loadHostInfo = async () => {
+  loadingHostInfo.value = true
+
+  try {
+    const response = await api.get('/host-info')
+    hostInfo.value = {
+      recommendedContainerHostIP: response.data.recommendedContainerHostIP || '',
+      lanIPs: response.data.lanIPs || [],
+      bridgeIPs: response.data.bridgeIPs || [],
+    }
+  } catch (err) {
+    error.value = err.response?.data?.error || '加载宿主机 IP 失败'
+  } finally {
+    loadingHostInfo.value = false
+  }
+}
+
+const saveAppConfig = async () => {
+  if (!appConfig.value.lxcImage) {
+    error.value = '请填写默认容器镜像'
+    return
+  }
+
+  savingAppConfig.value = true
+  error.value = ''
+  success.value = ''
+
+  try {
+    await api.put('/app-config', {
+      lxcImage: appConfig.value.lxcImage,
+    })
+    success.value = '默认容器镜像已更新'
+    await loadAppConfig()
+  } catch (err) {
+    error.value = err.response?.data?.error || '保存镜像配置失败'
+  } finally {
+    savingAppConfig.value = false
   }
 }
 
@@ -531,6 +658,8 @@ const handleLogout = () => {
 }
 
 onMounted(() => {
+  loadHostInfo()
+  loadAppConfig()
   checkEnvironment()
 })
 </script>

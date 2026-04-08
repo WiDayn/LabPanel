@@ -17,6 +17,7 @@ type Config struct {
 	FrpcPath      string
 	DocsPath      string
 	UploadPath    string
+	LxcImage      string
 }
 
 func Load() (*Config, error) {
@@ -41,6 +42,7 @@ func Load() (*Config, error) {
 		FrpcPath:      frpcPath,
 		DocsPath:      getEnv("DOCS_PATH", "./docs"),
 		UploadPath:    getEnv("UPLOAD_PATH", "./uploads"),
+		LxcImage:      getEnv("LXC_IMAGE", "ubuntu:22.04"),
 	}
 
 	return cfg, nil
@@ -52,4 +54,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-
