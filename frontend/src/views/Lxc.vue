@@ -10,8 +10,46 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
+        <Card
+          v-if="environmentCheck && !environmentCheck.lxc.ready"
+          class="p-6 border-amber-200 bg-amber-50"
+        >
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-semibold text-amber-900">LXC/LXD 尚未就绪</h2>
+              <p class="mt-1 text-sm text-amber-800">{{ environmentCheck.lxc.message }}</p>
+              <p
+                v-if="environmentCheck.lxc.missingItems?.length"
+                class="mt-2 text-sm text-amber-700"
+              >
+                缺少项目：{{ environmentCheck.lxc.missingItems.join('、') }}
+              </p>
+            </div>
+            <Button variant="outline" @click="checkEnvironment" :disabled="checkingEnvironment">
+              {{ checkingEnvironment ? '检查中...' : '重新检查' }}
+            </Button>
+          </div>
+
+          <div
+            v-for="guide in environmentCheck.lxc.guides || []"
+            :key="guide.title"
+            class="mt-4 rounded-lg border border-amber-200 bg-white p-4"
+          >
+            <h3 class="font-medium text-gray-900">{{ guide.title }}</h3>
+            <p class="mt-1 text-sm text-gray-600">{{ guide.description }}</p>
+            <div
+              v-for="command in guide.commands || []"
+              :key="`${guide.title}-${command.label}`"
+              class="mt-3"
+            >
+              <div class="text-sm font-medium text-gray-800">{{ command.label }}</div>
+              <pre class="mt-1 overflow-auto rounded bg-gray-100 p-3 text-xs text-gray-800">{{ command.command }}</pre>
+            </div>
+          </div>
+        </Card>
+
         <!-- 容器列表卡片 -->
-        <Card class="p-6">
+        <Card v-if="environmentCheck?.lxc.ready !== false" class="p-6">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold">容器列表</h2>
             <div class="flex gap-2">
@@ -207,6 +245,8 @@ import Navigation from '@/components/Navigation.vue'
 
 const router = useRouter()
 const containers = ref([])
+const environmentCheck = ref(null)
+const checkingEnvironment = ref(false)
 const loading = ref(false)
 const creating = ref(false)
 const error = ref('')
@@ -230,6 +270,10 @@ const passwordContainer = ref({
 })
 
 const loadContainers = async () => {
+  if (environmentCheck.value && !environmentCheck.value.lxc.ready) {
+    return
+  }
+
   loading.value = true
   error.value = ''
   success.value = ''
@@ -461,13 +505,32 @@ const closeCreateDialog = () => {
   error.value = ''
 }
 
+const checkEnvironment = async () => {
+  checkingEnvironment.value = true
+  error.value = ''
+
+  try {
+    const response = await api.get('/check')
+    environmentCheck.value = response.data
+
+    if (response.data?.lxc?.ready) {
+      await loadContainers()
+    } else {
+      containers.value = []
+    }
+  } catch (err) {
+    error.value = err.response?.data?.error || '环境检查失败'
+  } finally {
+    checkingEnvironment.value = false
+  }
+}
+
 const handleLogout = () => {
   localStorage.removeItem('token')
   router.push('/login')
 }
 
 onMounted(() => {
-  loadContainers()
+  checkEnvironment()
 })
 </script>
-
