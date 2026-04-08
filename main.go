@@ -51,6 +51,7 @@ func main() {
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())
 		{
+			auth.GET("/check", handlers.GetEnvironmentCheck)
 			auth.GET("/config", handlers.GetConfig)
 			auth.PUT("/config", handlers.UpdateConfig)
 			auth.POST("/restart", handlers.RestartService)
