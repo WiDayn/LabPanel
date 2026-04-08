@@ -370,8 +370,8 @@ func (s *LxcService) CreateContainer(name, password string) error {
 	// 2. 等待容器启动
 	s.waitForContainerRunning(name, 60)
 
-	// 3. 设置磁盘限制为200GB
-	cmd = exec.Command("lxc", "config", "set", name, "limits.disk", "200GB")
+	// 3. 设置根设备磁盘限制为200GB
+	cmd = exec.Command("lxc", "config", "device", "set", name, "root", "size", "200GB")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		outputStr := string(output)
