@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -101,6 +102,19 @@ func (s *LxcService) ListContainers() ([]models.LxcContainer, error) {
 	}
 
 	return containers, nil
+}
+
+func (s *LxcService) listContainerNames() ([]string, error) {
+	containers, err := s.ListContainers()
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(containers))
+	for _, container := range containers {
+		names = append(names, container.Name)
+	}
+	return names, nil
 }
 
 func getString(m map[string]interface{}, key string) string {
@@ -337,6 +351,53 @@ func uniquePaths(paths []string) []string {
 	return result
 }
 
+func (s *LxcService) backupDir() string {
+	backupDir := "./backups"
+	if s.cfg != nil && strings.TrimSpace(s.cfg.LxcBackupDir) != "" {
+		backupDir = strings.TrimSpace(s.cfg.LxcBackupDir)
+	}
+	return backupDir
+}
+
+func (s *LxcService) ListBackupArchives() ([]models.LxcBackupArchive, error) {
+	backupDir := s.backupDir()
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建备份目录失败: %v", err)
+	}
+
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取备份目录失败: %v", err)
+	}
+
+	archives := make([]models.LxcBackupArchive, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".tar.gz") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		fullPath := filepath.Join(backupDir, entry.Name())
+		archives = append(archives, models.LxcBackupArchive{
+			Name:         entry.Name(),
+			Path:         fullPath,
+			SizeBytes:    info.Size(),
+			ModifiedAt:   info.ModTime(),
+			DisplayLabel: fmt.Sprintf("%s (%.2f GB)", entry.Name(), float64(info.Size())/1024/1024/1024),
+		})
+	}
+
+	sort.Slice(archives, func(i, j int) bool {
+		return archives[i].ModifiedAt.After(archives[j].ModifiedAt)
+	})
+
+	return archives, nil
+}
+
 func (s *LxcService) GetContainerConfig(name string) (string, error) {
 	cmd := exec.Command("lxc", "config", "show", name)
 	output, err := cmd.CombinedOutput()
@@ -515,12 +576,32 @@ func min(a, b int) int {
 	return b
 }
 
-func (s *LxcService) CreateContainer(name, password string) error {
-	image := "ubuntu:22.04"
-	if s.cfg != nil && strings.TrimSpace(s.cfg.LxcImage) != "" {
-		image = strings.TrimSpace(s.cfg.LxcImage)
+func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
+	name := strings.TrimSpace(req.Name)
+	password := req.Password
+	sourceType := strings.TrimSpace(req.SourceType)
+	if sourceType == "" {
+		sourceType = models.LxcCreateSourceDefaultImage
 	}
 
+	switch sourceType {
+	case models.LxcCreateSourceDefaultImage, models.LxcCreateSourceCustomImage:
+		image := strings.TrimSpace(req.Image)
+		if sourceType == models.LxcCreateSourceDefaultImage || image == "" {
+			image = "ubuntu:22.04"
+			if s.cfg != nil && strings.TrimSpace(s.cfg.LxcImage) != "" {
+				image = strings.TrimSpace(s.cfg.LxcImage)
+			}
+		}
+		return s.createContainerFromImage(name, password, image)
+	case models.LxcCreateSourceBackup:
+		return s.createContainerFromBackup(name, password, strings.TrimSpace(req.BackupFile))
+	default:
+		return fmt.Errorf("不支持的创建来源: %s", sourceType)
+	}
+}
+
+func (s *LxcService) createContainerFromImage(name, password, image string) error {
 	// 1. 创建容器
 	cmd := exec.Command("lxc", "launch", image, name, "-c", "nvidia.runtime=true")
 	output, err := cmd.CombinedOutput()
@@ -540,27 +621,8 @@ func (s *LxcService) CreateContainer(name, password string) error {
 	// 2. 等待容器启动
 	s.waitForContainerRunning(name, 60)
 
-	// 3. 设置根设备磁盘限制为200GB
-	cmd = exec.Command("lxc", "config", "device", "set", name, "root", "size", "200GB")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		outputStr := string(output)
-		// 记录错误但不中断流程（某些存储后端可能不支持此配置）
-		_ = outputStr
-	}
-
-	// 4. 添加GPU设备
-	cmd = exec.Command("lxc", "config", "device", "add", name, "gpu", "gpu")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		outputStr := string(output)
-		// GPU设备可能已存在，忽略相关错误
-		if !strings.Contains(outputStr, "already exists") &&
-			!strings.Contains(outputStr, "already exist") {
-			// 如果不是"已存在"的错误，记录但不中断流程
-			_ = outputStr
-		}
-	}
+	// 3. 设置磁盘和 GPU 设备
+	configureRootDiskAndGPU(name)
 
 	// 5. 配置SSH
 	if err := s.configureSSH(name, password); err != nil {
@@ -568,6 +630,85 @@ func (s *LxcService) CreateContainer(name, password string) error {
 	}
 
 	return nil
+}
+
+func (s *LxcService) createContainerFromBackup(targetName, password, backupFile string) error {
+	if backupFile == "" {
+		return fmt.Errorf("请选择备份文件")
+	}
+
+	backupDir := s.backupDir()
+	backupPath := filepath.Join(backupDir, filepath.Base(backupFile))
+	if _, err := os.Stat(backupPath); err != nil {
+		return fmt.Errorf("备份文件不存在: %s", backupPath)
+	}
+
+	beforeNames, err := s.listContainerNames()
+	if err != nil {
+		return fmt.Errorf("读取导入前容器列表失败: %v", err)
+	}
+	beforeSet := make(map[string]struct{}, len(beforeNames))
+	for _, name := range beforeNames {
+		beforeSet[name] = struct{}{}
+	}
+
+	cmd := exec.Command("lxc", "import", backupPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("从备份导入容器失败: %v, 输出: %s", err, string(output))
+	}
+
+	afterNames, err := s.listContainerNames()
+	if err != nil {
+		return fmt.Errorf("读取导入后容器列表失败: %v", err)
+	}
+
+	importedName := ""
+	for _, name := range afterNames {
+		if _, existed := beforeSet[name]; !existed {
+			importedName = name
+			break
+		}
+	}
+	if importedName == "" {
+		if targetName != "" {
+			importedName = targetName
+		} else {
+			return fmt.Errorf("导入完成，但未识别到新的容器名称")
+		}
+	}
+
+	if targetName != "" && importedName != targetName {
+		renameCmd := exec.Command("lxc", "move", importedName, targetName)
+		renameOutput, renameErr := renameCmd.CombinedOutput()
+		if renameErr != nil {
+			return fmt.Errorf("导入成功但重命名失败: %v, 输出: %s", renameErr, string(renameOutput))
+		}
+		importedName = targetName
+	}
+
+	configureRootDiskAndGPU(importedName)
+
+	if err := s.configureSSH(importedName, password); err != nil {
+		return fmt.Errorf("配置SSH失败: %v", err)
+	}
+
+	return nil
+}
+
+func configureRootDiskAndGPU(name string) {
+	cmd := exec.Command("lxc", "config", "device", "set", name, "root", "size", "200GB")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_ = output
+	}
+
+	cmd = exec.Command("lxc", "config", "device", "add", name, "gpu", "gpu")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		outputStr := string(output)
+		if !strings.Contains(outputStr, "already exists") && !strings.Contains(outputStr, "already exist") {
+			_ = output
+		}
+	}
 }
 
 func (s *LxcService) configureSSH(name, password string) error {

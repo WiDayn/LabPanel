@@ -29,12 +29,25 @@ func CreateLxcContainer(c *gin.Context) {
 	}
 
 	lxcService := service.NewLxcService()
-	if err := lxcService.CreateContainer(req.Name, req.Password); err != nil {
+	if err := lxcService.CreateContainer(req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "容器创建成功"})
+}
+
+func GetLxcBackupArchives(c *gin.Context) {
+	lxcService := service.NewLxcService()
+	archives, err := lxcService.ListBackupArchives()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.LxcBackupArchiveListResponse{
+		Archives: archives,
+	})
 }
 
 func DeleteLxcContainer(c *gin.Context) {
