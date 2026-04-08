@@ -133,6 +133,31 @@ func ForceStopLxcContainer(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "容器已强制关机"})
 }
 
+func BackupLxcContainer(c *gin.Context) {
+	var req models.BackupLxcRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+
+	backup, err := service.GetLxcBackupManager().StartBackup(req.Name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.BackupLxcResponse{
+		Message: "备份任务已启动",
+		Backup:  *backup,
+	})
+}
+
+func GetLxcBackupStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, models.LxcBackupStatusListResponse{
+		Backups: service.GetLxcBackupManager().ListBackups(),
+	})
+}
+
 func GetLxcContainerConfig(c *gin.Context) {
 	var req models.GetLxcConfigRequest
 	if err := c.ShouldBindUri(&req); err != nil {

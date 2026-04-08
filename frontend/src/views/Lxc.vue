@@ -51,8 +51,8 @@
         <Card class="p-6">
           <div class="flex items-center justify-between gap-4 mb-4">
             <div>
-              <h2 class="text-lg font-semibold">默认容器镜像</h2>
-              <p class="mt-1 text-sm text-gray-600">新建容器时会使用这里设置的镜像，例如 `ubuntu:22.04` 或 `ubuntu:24.04`。</p>
+              <h2 class="text-lg font-semibold">容器默认配置</h2>
+              <p class="mt-1 text-sm text-gray-600">这里可以设置新建容器默认镜像，以及容器备份导出的保存目录。</p>
             </div>
           </div>
           <div class="w-full space-y-4">
@@ -64,12 +64,25 @@
                 placeholder="ubuntu:22.04"
               />
             </div>
+            <div>
+              <label class="block text-sm font-medium mb-2">容器备份目录</label>
+              <Input
+                v-model="appConfig.lxcBackupDir"
+                :disabled="savingAppConfig || loadingAppConfig"
+                placeholder="./backups"
+              />
+            </div>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <p class="text-sm text-gray-500">
-                当前新建容器默认使用：<span class="font-medium text-gray-700">{{ appConfig.lxcImage || 'ubuntu:22.04' }}</span>
-              </p>
+              <div class="text-sm text-gray-500 space-y-1">
+                <p>
+                  当前新建容器默认使用：<span class="font-medium text-gray-700">{{ appConfig.lxcImage || 'ubuntu:22.04' }}</span>
+                </p>
+                <p>
+                  当前容器备份将保存到：<span class="font-medium text-gray-700 break-all">{{ appConfig.lxcBackupDir || './backups' }}</span>
+                </p>
+              </div>
               <Button class="sm:ml-auto" @click="saveAppConfig" :disabled="savingAppConfig || loadingAppConfig">
-                {{ savingAppConfig ? '保存中...' : '保存镜像设置' }}
+                {{ savingAppConfig ? '保存中...' : '保存容器设置' }}
               </Button>
             </div>
           </div>
@@ -124,6 +137,42 @@
           </div>
           <div v-if="error" class="mb-4 text-red-500 text-sm">{{ error }}</div>
           <div v-if="success" class="mb-4 text-green-500 text-sm">{{ success }}</div>
+          <div
+            v-if="activeBackups.length > 0"
+            class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4"
+          >
+            <div class="text-sm font-medium text-blue-900">备份任务状态</div>
+            <div class="mt-3 space-y-3">
+              <div
+                v-for="backup in activeBackups"
+                :key="backup.taskId"
+                class="rounded-md border border-blue-100 bg-white p-3"
+              >
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">{{ backup.name }}</div>
+                    <div class="mt-1 text-xs text-gray-600">{{ formatBackupStatus(backup) }}</div>
+                  </div>
+                  <div class="text-xs text-gray-500">
+                    {{ formatBackupTime(backup.updatedAt) }}
+                  </div>
+                </div>
+                <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    class="h-full rounded-full transition-all"
+                    :class="backup.status === 'failed' ? 'bg-red-500' : backup.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'"
+                    :style="{ width: `${Math.max(5, backup.progress || 0)}%` }"
+                  />
+                </div>
+                <div
+                  v-if="backup.exportedFiles?.length"
+                  class="mt-2 text-xs text-gray-600 break-all"
+                >
+                  文件：{{ backup.exportedFiles.join('，') }}
+                </div>
+              </div>
+            </div>
+          </div>
           
           <div v-if="loading && containers.length === 0" class="text-center py-8 text-gray-500">
             加载中...
@@ -132,21 +181,19 @@
             暂无容器
           </div>
           <div v-else class="overflow-x-auto">
-            <table class="w-full border-collapse">
+            <table class="w-full border-collapse table-fixed">
               <thead>
                 <tr class="border-b">
-                  <th class="text-left p-2">名称</th>
-                  <th class="text-left p-2">状态</th>
-                  <th class="text-left p-2">类型</th>
-                  <th class="text-left p-2">架构</th>
-                  <th class="text-left p-2">IPv4</th>
-                  <th class="text-left p-2">IPv6</th>
+                  <th class="text-left p-2 w-32">名称</th>
+                  <th class="text-left p-2 w-24">状态</th>
+                  <th class="text-left p-2 w-36">IPv4</th>
+                  <th class="text-left p-2 w-48">IPv6</th>
                   <th class="text-left p-2">操作</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(container, index) in containers" :key="index" class="border-b">
-                  <td class="p-2 font-medium">{{ container.name }}</td>
+                  <td class="p-2 font-medium truncate" :title="container.name">{{ container.name }}</td>
                   <td class="p-2">
                     <span
                       :class="[
@@ -157,12 +204,14 @@
                       {{ container.state }}
                     </span>
                   </td>
-                  <td class="p-2">{{ container.type }}</td>
-                  <td class="p-2">{{ container.arch }}</td>
-                  <td class="p-2">{{ container.ipv4 || '-' }}</td>
-                  <td class="p-2">{{ container.ipv6 || '-' }}</td>
+                  <td class="p-2 truncate" :title="container.ipv4 || '-'">{{ container.ipv4 || '-' }}</td>
                   <td class="p-2">
-                    <div class="flex gap-2 flex-wrap">
+                    <div class="truncate" :title="container.ipv6 || '-'">
+                      {{ container.ipv6 || '-' }}
+                    </div>
+                  </td>
+                  <td class="p-2">
+                    <div class="flex gap-2 flex-nowrap whitespace-nowrap">
                       <Button 
                         v-if="container.state !== 'Running'" 
                         variant="outline" 
@@ -188,6 +237,14 @@
                         强制关机
                       </Button>
                       <Button variant="outline" size="sm" @click="showConfig(container.name)">配置</Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        :disabled="isBackupRunning(container.name)"
+                        @click="backupContainer(container.name)"
+                      >
+                        {{ isBackupRunning(container.name) ? '备份中...' : '备份' }}
+                      </Button>
                       <Button variant="outline" size="sm" @click="changePassword(container.name)">修改密码</Button>
                       <Button variant="outline" size="sm" @click="restartContainer(container.name)">重启</Button>
                       <Button variant="destructive" size="sm" @click="deleteContainer(container.name)">删除</Button>
@@ -305,7 +362,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
@@ -322,6 +379,7 @@ const creating = ref(false)
 const loadingAppConfig = ref(false)
 const savingAppConfig = ref(false)
 const loadingHostInfo = ref(false)
+const backupStatuses = ref({})
 const error = ref('')
 const success = ref('')
 const showCreateDialog = ref(false)
@@ -335,6 +393,7 @@ const savingConfig = ref(false)
 const configError = ref('')
 const appConfig = ref({
   lxcImage: 'ubuntu:22.04',
+  lxcBackupDir: './backups',
 })
 const hostInfo = ref({
   recommendedContainerHostIP: '',
@@ -349,6 +408,13 @@ const passwordContainer = ref({
   name: '',
   password: '',
 })
+let backupPollingTimer = null
+
+const activeBackups = computed(() =>
+  Object.values(backupStatuses.value)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+)
 
 const loadContainers = async () => {
   if (environmentCheck.value && !environmentCheck.value.lxc.ready) {
@@ -369,6 +435,21 @@ const loadContainers = async () => {
   }
 }
 
+const loadBackupStatuses = async ({ silent = true } = {}) => {
+  try {
+    const response = await api.get('/lxc/backup-status')
+    const nextStatuses = {}
+    for (const backup of response.data?.backups || []) {
+      nextStatuses[backup.name] = backup
+    }
+    backupStatuses.value = nextStatuses
+  } catch (err) {
+    if (!silent) {
+      error.value = err.response?.data?.error || '加载备份状态失败'
+    }
+  }
+}
+
 const loadAppConfig = async () => {
   loadingAppConfig.value = true
 
@@ -376,9 +457,10 @@ const loadAppConfig = async () => {
     const response = await api.get('/app-config')
     appConfig.value = {
       lxcImage: response.data.lxcImage || 'ubuntu:22.04',
+      lxcBackupDir: response.data.lxcBackupDir || './backups',
     }
   } catch (err) {
-    error.value = err.response?.data?.error || '加载镜像配置失败'
+    error.value = err.response?.data?.error || '加载容器配置失败'
   } finally {
     loadingAppConfig.value = false
   }
@@ -407,6 +489,11 @@ const saveAppConfig = async () => {
     return
   }
 
+  if (!appConfig.value.lxcBackupDir) {
+    error.value = '请填写容器备份目录'
+    return
+  }
+
   savingAppConfig.value = true
   error.value = ''
   success.value = ''
@@ -414,11 +501,12 @@ const saveAppConfig = async () => {
   try {
     await api.put('/app-config', {
       lxcImage: appConfig.value.lxcImage,
+      lxcBackupDir: appConfig.value.lxcBackupDir,
     })
-    success.value = '默认容器镜像已更新'
+    success.value = '容器配置已更新'
     await loadAppConfig()
   } catch (err) {
-    error.value = err.response?.data?.error || '保存镜像配置失败'
+    error.value = err.response?.data?.error || '保存容器配置失败'
   } finally {
     savingAppConfig.value = false
   }
@@ -534,6 +622,71 @@ const forceStopContainer = async (name) => {
     }, 1000)
   } catch (err) {
     error.value = err.response?.data?.error || '强制关机失败'
+  }
+}
+
+const backupContainer = async (name) => {
+  error.value = ''
+  success.value = ''
+
+  try {
+    const response = await api.post('/lxc/backup', { name })
+    if (response.data?.backup) {
+      backupStatuses.value = {
+        ...backupStatuses.value,
+        [name]: response.data.backup,
+      }
+    }
+    success.value = `已开始备份容器 "${name}"，备份文件会导出到 ${appConfig.value.lxcBackupDir || './backups'}`
+    startBackupPolling()
+  } catch (err) {
+    error.value = err.response?.data?.error || '容器备份失败'
+  }
+}
+
+const isBackupRunning = (name) => {
+  const backup = backupStatuses.value[name]
+  return backup?.status === 'queued' || backup?.status === 'running'
+}
+
+const formatBackupStatus = (backup) => {
+  const percent = typeof backup.progress === 'number' ? `${backup.progress}%` : ''
+  return [backup.message, percent].filter(Boolean).join(' · ')
+}
+
+const formatBackupTime = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const startBackupPolling = () => {
+  if (backupPollingTimer) {
+    return
+  }
+
+  backupPollingTimer = window.setInterval(async () => {
+    await loadBackupStatuses()
+    const hasRunningBackup = Object.values(backupStatuses.value).some(
+      (backup) => backup?.status === 'queued' || backup?.status === 'running'
+    )
+    if (!hasRunningBackup) {
+      stopBackupPolling()
+    }
+  }, 3000)
+}
+
+const stopBackupPolling = () => {
+  if (backupPollingTimer) {
+    window.clearInterval(backupPollingTimer)
+    backupPollingTimer = null
   }
 }
 
@@ -670,5 +823,17 @@ onMounted(() => {
   loadHostInfo()
   loadAppConfig()
   checkEnvironment()
+  loadBackupStatuses().then(() => {
+    const hasRunningBackup = Object.values(backupStatuses.value).some(
+      (backup) => backup?.status === 'queued' || backup?.status === 'running'
+    )
+    if (hasRunningBackup) {
+      startBackupPolling()
+    }
+  })
+})
+
+onUnmounted(() => {
+  stopBackupPolling()
 })
 </script>

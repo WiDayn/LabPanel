@@ -18,6 +18,7 @@ type Config struct {
 	DocsPath      string
 	UploadPath    string
 	LxcImage      string
+	LxcBackupDir  string
 }
 
 func Load() (*Config, error) {
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 		DocsPath:      getEnv("DOCS_PATH", "./docs"),
 		UploadPath:    getEnv("UPLOAD_PATH", "./uploads"),
 		LxcImage:      getEnv("LXC_IMAGE", "ubuntu:22.04"),
+		LxcBackupDir:  getEnv("LXC_BACKUP_DIR", "./backups"),
 	}
 
 	return cfg, nil

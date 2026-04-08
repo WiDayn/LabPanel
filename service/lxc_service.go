@@ -4,9 +4,12 @@ import (
 	"LabPanel/config"
 	"LabPanel/models"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -174,6 +177,164 @@ func (s *LxcService) ForceStopContainer(name string) error {
 		return fmt.Errorf("强制停止容器失败: %v, 输出: %s", err, string(output))
 	}
 	return nil
+}
+
+func (s *LxcService) BackupContainer(name string) (string, error) {
+	files, err := s.BackupContainerWithProgress(name, nil)
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("备份完成，但未找到导出文件")
+	}
+	return files[0], nil
+}
+
+func (s *LxcService) BackupContainerWithProgress(name string, progress func(stage, message string, percent int)) ([]string, error) {
+	backupDir := "./backups"
+	if s.cfg != nil && strings.TrimSpace(s.cfg.LxcBackupDir) != "" {
+		backupDir = strings.TrimSpace(s.cfg.LxcBackupDir)
+	}
+
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建备份目录失败: %v", err)
+	}
+
+	timestamp := time.Now().Format("20060102-150405")
+	exportTarget := filepath.Join(backupDir, fmt.Sprintf("%s-%s.tar.gz", sanitizeBackupName(name), timestamp))
+
+	if progress != nil {
+		progress("exporting", "正在导出容器备份文件", 20)
+	}
+	exportOutput, err := s.runLxcCommandWithHeartbeat(
+		45*time.Minute,
+		"exporting",
+		20,
+		85,
+		progress,
+		"lxc", "export", name, exportTarget,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("导出容器备份失败: %v, 输出: %s", err, string(exportOutput))
+	}
+
+	if progress != nil {
+		progress("collecting", "正在整理导出的备份文件", 90)
+	}
+	exportedFiles, err := resolveExportedArchivePaths(exportTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	return exportedFiles, nil
+}
+
+func (s *LxcService) runLxcCommandWithHeartbeat(
+	timeout time.Duration,
+	stage string,
+	startPercent int,
+	endPercent int,
+	progress func(stage, message string, percent int),
+	name string,
+	args ...string,
+) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	done := make(chan struct{})
+
+	var output []byte
+	var err error
+
+	go func() {
+		output, err = cmd.CombinedOutput()
+		close(done)
+	}()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	startedAt := time.Now()
+
+	for {
+		select {
+		case <-done:
+			return output, err
+		case <-ticker.C:
+			if progress != nil {
+				elapsed := time.Since(startedAt).Round(time.Second)
+				nextPercent := startPercent + int(elapsed/(15*time.Second))
+				if nextPercent > endPercent {
+					nextPercent = endPercent
+				}
+				progress(stage, fmt.Sprintf("正在执行 %s，已耗时 %s", strings.Join(append([]string{name}, args...), " "), elapsed), nextPercent)
+			}
+		case <-ctx.Done():
+			<-done
+			if ctx.Err() == context.DeadlineExceeded {
+				return output, fmt.Errorf("执行超时（>%s）", timeout)
+			}
+			return output, ctx.Err()
+		}
+	}
+}
+
+func sanitizeBackupName(name string) string {
+	replacer := strings.NewReplacer("/", "-", "\\", "-", " ", "-", ":", "-", "@", "-")
+	safeName := replacer.Replace(strings.TrimSpace(name))
+	if safeName == "" {
+		return "container"
+	}
+	return safeName
+}
+
+func resolveExportedArchivePaths(exportPrefix string) ([]string, error) {
+	candidates := []string{
+		exportPrefix,
+		exportPrefix + ".tar.gz",
+		exportPrefix + ".tar.xz",
+		exportPrefix + ".zip",
+	}
+
+	results := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			results = append(results, candidate)
+		}
+	}
+	if len(results) > 0 {
+		return uniquePaths(results), nil
+	}
+
+	matches, err := filepath.Glob(exportPrefix + "*")
+	if err != nil {
+		return nil, fmt.Errorf("查找导出文件失败: %v", err)
+	}
+	results = results[:0]
+	for _, match := range matches {
+		info, statErr := os.Stat(match)
+		if statErr == nil && !info.IsDir() {
+			results = append(results, match)
+		}
+	}
+	if len(results) > 0 {
+		return uniquePaths(results), nil
+	}
+
+	return nil, fmt.Errorf("镜像已导出，但未找到备份文件，请检查目录: %s", exportPrefix)
+}
+
+func uniquePaths(paths []string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		result = append(result, path)
+	}
+	return result
 }
 
 func (s *LxcService) GetContainerConfig(name string) (string, error) {

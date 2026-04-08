@@ -27,7 +27,8 @@ func (s *AppConfigService) GetConfig() (*models.AppConfigResponse, error) {
 	}
 
 	return &models.AppConfigResponse{
-		LxcImage: cfg.LxcImage,
+		LxcImage:     cfg.LxcImage,
+		LxcBackupDir: cfg.LxcBackupDir,
 	}, nil
 }
 
@@ -35,6 +36,10 @@ func (s *AppConfigService) UpdateConfig(req models.UpdateAppConfigRequest) error
 	lxcImage := strings.TrimSpace(req.LxcImage)
 	if lxcImage == "" {
 		return fmt.Errorf("容器镜像不能为空")
+	}
+	lxcBackupDir := strings.TrimSpace(req.LxcBackupDir)
+	if lxcBackupDir == "" {
+		return fmt.Errorf("容器备份目录不能为空")
 	}
 
 	envMap, err := godotenv.Read(s.envPath)
@@ -46,6 +51,7 @@ func (s *AppConfigService) UpdateConfig(req models.UpdateAppConfigRequest) error
 	}
 
 	envMap["LXC_IMAGE"] = lxcImage
+	envMap["LXC_BACKUP_DIR"] = lxcBackupDir
 
 	if err := godotenv.Write(envMap, s.envPath); err != nil {
 		return fmt.Errorf("写入 .env 失败: %v", err)
