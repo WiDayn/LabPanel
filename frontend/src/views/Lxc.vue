@@ -15,7 +15,10 @@
             <div>
               <h2 class="text-base font-semibold">宿主机 IP</h2>
               <p class="mt-1 text-sm text-gray-600">
-                容器内访问宿主机时，优先使用
+                这里区分了“容器内访问宿主机”和“局域网其他设备访问宿主机”两种地址，避免混淆。
+              </p>
+              <p class="mt-1 text-sm text-gray-600">
+                当前 LXC 容器里如果要访问宿主机，请优先使用
                 <span class="font-medium text-gray-800">{{ hostInfo.recommendedContainerHostIP || '-' }}</span>
               </p>
             </div>
@@ -25,15 +28,21 @@
           </div>
           <div class="mt-3 grid gap-3 md:grid-cols-2">
             <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div class="text-xs font-medium text-gray-500">容器访问宿主机</div>
+              <div class="text-xs font-medium text-gray-500">容器内访问宿主机（LXD 网桥地址）</div>
               <div class="mt-1 break-all text-sm font-medium text-gray-900">
                 {{ hostInfo.recommendedContainerHostIP || '未检测到' }}
               </div>
+              <div class="mt-1 text-xs text-gray-500">
+                适合在容器里连接宿主机上的 SSH、HTTP、数据库等服务。
+              </div>
             </div>
             <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div class="text-xs font-medium text-gray-500">宿主机局域网 IP</div>
+              <div class="text-xs font-medium text-gray-500">局域网其他设备访问宿主机</div>
               <div class="mt-1 break-all text-sm font-medium text-gray-900">
                 {{ hostInfo.lanIPs.length ? hostInfo.lanIPs.join(' / ') : '未检测到' }}
+              </div>
+              <div class="mt-1 text-xs text-gray-500">
+                适合你的电脑、手机或同网段其他服务器访问这台宿主机。
               </div>
             </div>
           </div>
@@ -46,7 +55,7 @@
               <p class="mt-1 text-sm text-gray-600">新建容器时会使用这里设置的镜像，例如 `ubuntu:22.04` 或 `ubuntu:24.04`。</p>
             </div>
           </div>
-          <div class="max-w-xl space-y-4">
+          <div class="w-full space-y-4">
             <div>
               <label class="block text-sm font-medium mb-2">LXC 镜像</label>
               <Input
@@ -55,11 +64,11 @@
                 placeholder="ubuntu:22.04"
               />
             </div>
-            <div class="flex items-center justify-between gap-3">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
               <p class="text-sm text-gray-500">
                 当前新建容器默认使用：<span class="font-medium text-gray-700">{{ appConfig.lxcImage || 'ubuntu:22.04' }}</span>
               </p>
-              <Button @click="saveAppConfig" :disabled="savingAppConfig || loadingAppConfig">
+              <Button class="sm:ml-auto" @click="saveAppConfig" :disabled="savingAppConfig || loadingAppConfig">
                 {{ savingAppConfig ? '保存中...' : '保存镜像设置' }}
               </Button>
             </div>
