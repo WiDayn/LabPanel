@@ -138,6 +138,42 @@
           <div v-if="error" class="mb-4 text-red-500 text-sm">{{ error }}</div>
           <div v-if="success" class="mb-4 text-green-500 text-sm">{{ success }}</div>
           <div
+            v-if="activeRestores.length > 0"
+            class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4"
+          >
+            <div class="text-sm font-medium text-amber-900">恢复任务状态</div>
+            <div class="mt-1 text-xs text-amber-800">
+              备份包导入会在后台运行，20GB 备份可能需要几分钟。任务运行时请不要重复创建同名容器。
+            </div>
+            <div class="mt-3 space-y-3">
+              <div
+                v-for="restore in activeRestores"
+                :key="restore.taskId"
+                class="rounded-md border border-amber-100 bg-white p-3"
+              >
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">{{ restore.name }}</div>
+                    <div class="mt-1 text-xs text-gray-600">{{ formatRestoreStatus(restore) }}</div>
+                    <div v-if="restore.backupFile" class="mt-1 text-xs text-gray-500 break-all">
+                      备份包：{{ restore.backupFile }}
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-500">
+                    {{ formatBackupTime(restore.updatedAt) }}
+                  </div>
+                </div>
+                <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    class="h-full rounded-full transition-all"
+                    :class="restore.status === 'failed' ? 'bg-red-500' : restore.status === 'completed' ? 'bg-green-500' : 'bg-amber-500'"
+                    :style="{ width: `${Math.max(5, restore.progress || 0)}%` }"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
             v-if="activeBackups.length > 0"
             class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4"
           >
@@ -269,8 +305,12 @@
         <div v-if="creating" class="space-y-4">
           <div class="text-center py-8">
             <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p class="text-gray-600 mb-2">正在创建容器，请稍候...</p>
-            <p class="text-sm text-gray-500">这可能需要10-20秒，请耐心等待</p>
+            <p class="text-gray-600 mb-2">
+              {{ newContainer.sourceType === 'backup' ? '正在提交恢复任务...' : '正在创建容器，请稍候...' }}
+            </p>
+            <p class="text-sm text-gray-500">
+              {{ newContainer.sourceType === 'backup' ? '提交后会在后台导入，可在容器列表上方查看状态' : '这可能需要10-20秒，请耐心等待' }}
+            </p>
           </div>
         </div>
         <div v-else class="space-y-4">
@@ -312,6 +352,12 @@
             <p class="mt-1 text-xs text-gray-500">这里填写要传给 `lxc launch` 的镜像名称。</p>
           </div>
           <div v-if="newContainer.sourceType === 'backup'">
+            <div
+              v-if="hasRunningRestores"
+              class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              当前已有备份恢复任务在后台运行。可以继续创建不同名称的容器，但不要重复提交同名恢复。
+            </div>
             <div class="flex items-center justify-between gap-3">
               <label class="block text-sm font-medium">选择备份包</label>
               <Button variant="outline" size="sm" @click="loadBackupArchives({ silent: false })" :disabled="loadingBackupArchives">
@@ -441,6 +487,7 @@ const savingAppConfig = ref(false)
 const loadingHostInfo = ref(false)
 const loadingBackupArchives = ref(false)
 const backupStatuses = ref({})
+const restoreStatuses = ref({})
 const backupArchives = ref([])
 const error = ref('')
 const success = ref('')
@@ -474,11 +521,24 @@ const passwordContainer = ref({
   password: '',
 })
 let backupPollingTimer = null
+let restorePollingTimer = null
 
 const activeBackups = computed(() =>
   Object.values(backupStatuses.value)
     .filter(Boolean)
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+)
+
+const activeRestores = computed(() =>
+  Object.values(restoreStatuses.value)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+)
+
+const hasRunningRestores = computed(() =>
+  Object.values(restoreStatuses.value).some(
+    (restore) => restore?.status === 'queued' || restore?.status === 'running'
+  )
 )
 
 const loadContainers = async () => {
@@ -511,6 +571,21 @@ const loadBackupStatuses = async ({ silent = true } = {}) => {
   } catch (err) {
     if (!silent) {
       error.value = err.response?.data?.error || '加载备份状态失败'
+    }
+  }
+}
+
+const loadRestoreStatuses = async ({ silent = true } = {}) => {
+  try {
+    const response = await api.get('/lxc/restore-status')
+    const nextStatuses = {}
+    for (const restore of response.data?.restores || []) {
+      nextStatuses[restore.name] = restore
+    }
+    restoreStatuses.value = nextStatuses
+  } catch (err) {
+    if (!silent) {
+      error.value = err.response?.data?.error || '加载恢复状态失败'
     }
   }
 }
@@ -613,14 +688,23 @@ const createContainer = async () => {
   success.value = ''
 
   try {
-    await api.post('/lxc/create', {
+    const response = await api.post('/lxc/create', {
       name: newContainer.value.name,
       password: newContainer.value.password,
       sourceType: newContainer.value.sourceType,
       image: newContainer.value.image,
       backupFile: newContainer.value.backupFile,
     })
-    success.value = '容器创建成功'
+    if (newContainer.value.sourceType === 'backup' && response.data?.restore) {
+      restoreStatuses.value = {
+        ...restoreStatuses.value,
+        [response.data.restore.name]: response.data.restore,
+      }
+      success.value = `已开始后台恢复容器 "${response.data.restore.name}"，可在恢复任务状态中查看进度`
+      startRestorePolling()
+    } else {
+      success.value = '容器创建成功'
+    }
     creating.value = false
     closeCreateDialog()
     // 延迟刷新列表，等待容器创建完成
@@ -747,6 +831,11 @@ const formatBackupStatus = (backup) => {
   return [backup.message, percent].filter(Boolean).join(' · ')
 }
 
+const formatRestoreStatus = (restore) => {
+  const percent = typeof restore.progress === 'number' ? `${restore.progress}%` : ''
+  return [restore.message, percent].filter(Boolean).join(' · ')
+}
+
 const formatBackupTime = (value) => {
   if (!value) {
     return ''
@@ -780,6 +869,30 @@ const stopBackupPolling = () => {
   if (backupPollingTimer) {
     window.clearInterval(backupPollingTimer)
     backupPollingTimer = null
+  }
+}
+
+const startRestorePolling = () => {
+  if (restorePollingTimer) {
+    return
+  }
+
+  restorePollingTimer = window.setInterval(async () => {
+    await loadRestoreStatuses()
+    const hasRunningRestore = Object.values(restoreStatuses.value).some(
+      (restore) => restore?.status === 'queued' || restore?.status === 'running'
+    )
+    if (!hasRunningRestore) {
+      stopRestorePolling()
+      loadContainers()
+    }
+  }, 3000)
+}
+
+const stopRestorePolling = () => {
+  if (restorePollingTimer) {
+    window.clearInterval(restorePollingTimer)
+    restorePollingTimer = null
   }
 }
 
@@ -949,9 +1062,15 @@ onMounted(() => {
       startBackupPolling()
     }
   })
+  loadRestoreStatuses().then(() => {
+    if (hasRunningRestores.value) {
+      startRestorePolling()
+    }
+  })
 })
 
 onUnmounted(() => {
   stopBackupPolling()
+  stopRestorePolling()
 })
 </script>

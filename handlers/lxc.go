@@ -28,6 +28,20 @@ func CreateLxcContainer(c *gin.Context) {
 		return
 	}
 
+	if req.SourceType == models.LxcCreateSourceBackup {
+		restore, err := service.GetLxcRestoreManager().StartRestore(req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, models.RestoreLxcResponse{
+			Message: "恢复任务已启动",
+			Restore: *restore,
+		})
+		return
+	}
+
 	lxcService := service.NewLxcService()
 	if err := lxcService.CreateContainer(req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -168,6 +182,12 @@ func BackupLxcContainer(c *gin.Context) {
 func GetLxcBackupStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, models.LxcBackupStatusListResponse{
 		Backups: service.GetLxcBackupManager().ListBackups(),
+	})
+}
+
+func GetLxcRestoreStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, models.LxcRestoreStatusListResponse{
+		Restores: service.GetLxcRestoreManager().ListRestores(),
 	})
 }
 
