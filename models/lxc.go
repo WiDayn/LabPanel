@@ -89,6 +89,28 @@ type LxcBackupStatusListResponse struct {
 	Backups []LxcBackupStatus `json:"backups"`
 }
 
+type LxcRestoreStatus struct {
+	Name       string     `json:"name"`
+	TaskID     string     `json:"taskId"`
+	Status     string     `json:"status"`
+	Stage      string     `json:"stage"`
+	Progress   int        `json:"progress"`
+	Message    string     `json:"message"`
+	BackupFile string     `json:"backupFile"`
+	StartedAt  time.Time  `json:"startedAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+	FinishedAt *time.Time `json:"finishedAt"`
+}
+
+type RestoreLxcResponse struct {
+	Message string           `json:"message"`
+	Restore LxcRestoreStatus `json:"restore"`
+}
+
+type LxcRestoreStatusListResponse struct {
+	Restores []LxcRestoreStatus `json:"restores"`
+}
+
 type LxcBackupArchive struct {
 	Name         string    `json:"name"`
 	Path         string    `json:"path"`

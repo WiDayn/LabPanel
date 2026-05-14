@@ -5,19 +5,25 @@ import (
 	"LabPanel/models"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 type LxcService struct {
 	cfg *config.Config
 }
+
+var lxcRestoreTargets sync.Map
 
 func NewLxcService() *LxcService {
 	cfg, _ := config.Load()
@@ -633,6 +639,15 @@ func (s *LxcService) createContainerFromImage(name, password, image string) erro
 }
 
 func (s *LxcService) createContainerFromBackup(targetName, password, backupFile string) error {
+	targetName = strings.TrimSpace(targetName)
+	if targetName == "" {
+		return fmt.Errorf("容器名称不能为空")
+	}
+	if _, loaded := lxcRestoreTargets.LoadOrStore(targetName, struct{}{}); loaded {
+		return fmt.Errorf("容器 %s 已有恢复任务正在执行，请等待完成后再试", targetName)
+	}
+	defer lxcRestoreTargets.Delete(targetName)
+
 	if backupFile == "" {
 		return fmt.Errorf("请选择备份文件")
 	}
@@ -651,49 +666,471 @@ func (s *LxcService) createContainerFromBackup(targetName, password, backupFile 
 	for _, name := range beforeNames {
 		beforeSet[name] = struct{}{}
 	}
-
-	cmd := exec.Command("lxc", "import", backupPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("从备份导入容器失败: %v, 输出: %s", err, string(output))
+	if _, existed := beforeSet[targetName]; existed {
+		return fmt.Errorf("容器名称已存在: %s", targetName)
 	}
 
-	afterNames, err := s.listContainerNames()
-	if err != nil {
-		return fmt.Errorf("读取导入后容器列表失败: %v", err)
+	if activeOps, err := activeImportOperations(targetName); err == nil && len(activeOps) > 0 {
+		return fmt.Errorf("检测到已有导入或清理任务正在占用容器 %s，请等待或手动终止后再试: %s", targetName, strings.Join(activeOps, "; "))
 	}
 
-	importedName := ""
-	for _, name := range afterNames {
-		if _, existed := beforeSet[name]; !existed {
-			importedName = name
-			break
-		}
-	}
-	if importedName == "" {
-		if targetName != "" {
-			importedName = targetName
-		} else {
-			return fmt.Errorf("导入完成，但未识别到新的容器名称")
-		}
+	if err := s.cleanupStaleImportTarget(targetName); err != nil {
+		return fmt.Errorf("清理同名残留资源失败: %v", err)
 	}
 
-	if targetName != "" && importedName != targetName {
-		renameCmd := exec.Command("lxc", "move", importedName, targetName)
-		renameOutput, renameErr := renameCmd.CombinedOutput()
-		if renameErr != nil {
-			return fmt.Errorf("导入成功但重命名失败: %v, 输出: %s", renameErr, string(renameOutput))
-		}
-		importedName = targetName
+	if err := s.importBackupWithTargetName(backupPath, targetName); err != nil {
+		return err
 	}
 
-	configureRootDiskAndGPU(importedName)
+	configureRootDiskAndGPU(targetName)
 
-	if err := s.configureSSH(importedName, password); err != nil {
+	if err := s.configureSSH(targetName, password); err != nil {
 		return fmt.Errorf("配置SSH失败: %v", err)
 	}
 
 	return nil
+}
+
+func (s *LxcService) importBackupWithTargetName(backupPath, targetName string) error {
+	macAddress, err := randomLxdMACAddress()
+	if err != nil {
+		return fmt.Errorf("生成新容器 MAC 地址失败: %v", err)
+	}
+
+	var lastErr error
+	var lastOutput string
+	for attempt := 0; attempt < 3; attempt++ {
+		output, err := exec.Command("lxc", "import", backupPath, targetName, "--device", "eth0,hwaddr="+macAddress).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		lastOutput = string(output)
+		recovered, recoverErr := s.recoverStaleImportTarget(lastOutput, targetName)
+		if recoverErr != nil {
+			return recoverErr
+		}
+		if !recovered {
+			break
+		}
+	}
+
+	return fmt.Errorf("从备份导入容器失败: %v, 输出: %s", lastErr, lastOutput)
+}
+
+func randomLxdMACAddress() (string, error) {
+	suffix := make([]byte, 3)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("00:16:3e:%02x:%02x:%02x", suffix[0], suffix[1], suffix[2]), nil
+}
+
+func (s *LxcService) recoverStaleImportTarget(output, targetName string) (bool, error) {
+	stalePath, hasStalePath := staleImportMountPath(output, targetName)
+	staleDataset, hasStaleDataset := staleImportZFSDataset(output, targetName)
+	missingDataset, hasMissingDataset := missingImportZFSDataset(output, targetName)
+	hasStaleVolume := staleImportVolumeExists(output)
+	if !hasStalePath && !hasStaleVolume && !hasStaleDataset && !hasMissingDataset {
+		return false, nil
+	}
+
+	if exists, checkErr := s.containerNameExists(targetName); checkErr != nil {
+		return false, fmt.Errorf("从备份导入容器失败，且检查残留资源前读取容器列表失败: %v, 原始输出: %s", checkErr, output)
+	} else if exists {
+		return false, fmt.Errorf("容器名称已存在: %s", targetName)
+	}
+
+	if hasStalePath {
+		if removeErr := removeStaleImportMountDir(stalePath); removeErr != nil {
+			return false, fmt.Errorf("从备份导入容器失败，检测到残留目录但清理失败: %v, 残留目录: %s, 原始输出: %s", removeErr, stalePath, output)
+		}
+	}
+
+	if hasStaleVolume {
+		if removeErr := s.removeStaleImportVolume(targetName); removeErr != nil {
+			if zfsErr := removePotentialStaleContainerZFSDatasets(targetName); zfsErr != nil {
+				return false, fmt.Errorf("从备份导入容器失败，检测到残留存储卷但清理失败: %v; 尝试清理同名 ZFS dataset 也失败: %v, 原始输出: %s", removeErr, zfsErr, output)
+			}
+		}
+	}
+
+	if hasMissingDataset {
+		if removeErr := s.cleanupStaleImportTarget(targetName); removeErr != nil {
+			return false, fmt.Errorf("从备份导入容器失败，检测到缺失的 ZFS dataset 但清理同名残留失败: %v, dataset: %s, 原始输出: %s", removeErr, missingDataset, output)
+		}
+	}
+
+	if hasStaleDataset {
+		if removeErr := removeStaleImportZFSDataset(staleDataset, targetName); removeErr != nil {
+			return false, fmt.Errorf("从备份导入容器失败，检测到残留 ZFS dataset 但清理失败: %v, dataset: %s, 原始输出: %s", removeErr, staleDataset, output)
+		}
+	}
+
+	return true, nil
+}
+
+func (s *LxcService) cleanupStaleImportTarget(targetName string) error {
+	var errors []string
+
+	if err := s.removeStaleImportVolume(targetName); err != nil && !isStaleVolumeNotFound(err) {
+		errors = append(errors, err.Error())
+	}
+	if err := removePotentialStaleContainerZFSDatasets(targetName); err != nil && !isStaleZFSDatasetNotFound(err) && !isZFSUnavailable(err) {
+		errors = append(errors, err.Error())
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+	return nil
+}
+
+func activeImportOperations(targetName string) ([]string, error) {
+	lines, err := activeOperationLines()
+	if err != nil {
+		return nil, err
+	}
+
+	var operations []string
+	for _, line := range lines {
+		if targetNameFromOperation(line) == targetName || operationMentionsTarget(line, targetName) {
+			operations = append(operations, compactProcessLine(line))
+		}
+	}
+	if len(operations) > 5 {
+		operations = operations[:5]
+	}
+	return operations, nil
+}
+
+func activeOperationLines() ([]string, error) {
+	output, err := exec.Command("ps", "-eo", "pid=,stat=,args=").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("读取进程列表失败: %v, 输出: %s", err, string(output))
+	}
+
+	var operations []string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if strings.Contains(line, "lxc import ") ||
+			strings.Contains(line, "lxc delete ") ||
+			strings.Contains(line, "zfs destroy") ||
+			strings.Contains(line, "tar -") {
+			operations = append(operations, line)
+		}
+	}
+	return operations, nil
+}
+
+func activeImportProcessStatuses() []models.LxcRestoreStatus {
+	lines, err := activeOperationLines()
+	if err != nil {
+		return nil
+	}
+
+	now := time.Now()
+	statuses := make([]models.LxcRestoreStatus, 0, len(lines))
+	for _, line := range lines {
+		name := targetNameFromOperation(line)
+		if name == "" {
+			continue
+		}
+
+		statuses = append(statuses, models.LxcRestoreStatus{
+			Name:      name,
+			TaskID:    "process-" + firstProcessField(line),
+			Status:    models.LxcBackupStatusRunning,
+			Stage:     "external",
+			Progress:  50,
+			Message:   "检测到系统中已有 LXC 导入或清理进程：" + compactProcessLine(line),
+			StartedAt: now,
+			UpdatedAt: now,
+		})
+	}
+	return statuses
+}
+
+func targetNameFromOperation(line string) string {
+	fields := strings.Fields(line)
+	for i, field := range fields {
+		switch field {
+		case "import":
+			if i+2 < len(fields) && !strings.HasPrefix(fields[i+2], "-") {
+				return strings.Trim(fields[i+2], `'"`)
+			}
+		case "delete":
+			if i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "-") {
+				return strings.Trim(fields[i+1], `'"`)
+			}
+		}
+	}
+
+	re := regexp.MustCompile(`(?:^|[\s/])containers/([^/\s'"]+)`)
+	matches := re.FindStringSubmatch(line)
+	if len(matches) == 2 {
+		return matches[1]
+	}
+
+	return ""
+}
+
+func firstProcessField(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "unknown"
+	}
+	return fields[0]
+}
+
+func operationMentionsTarget(line, targetName string) bool {
+	re := regexp.MustCompile(`(?:^|\s)` + regexp.QuoteMeta(targetName) + `(?:$|\s)`)
+	if re.MatchString(line) {
+		return true
+	}
+
+	pathRe := regexp.MustCompile(`(?:^|[\s/])containers/` + regexp.QuoteMeta(targetName) + `(?:$|[\s/])`)
+	return pathRe.MatchString(line)
+}
+
+func compactProcessLine(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) <= 8 {
+		return line
+	}
+
+	return strings.Join(fields[:8], " ") + " ..."
+}
+
+func (s *LxcService) containerNameExists(targetName string) (bool, error) {
+	names, err := s.listContainerNames()
+	if err != nil {
+		return false, err
+	}
+
+	for _, name := range names {
+		if name == targetName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func staleImportMountPath(output, targetName string) (string, bool) {
+	lowerOutput := strings.ToLower(output)
+	if !strings.Contains(lowerOutput, "file exists") || !strings.Contains(lowerOutput, "create mount directory") {
+		return "", false
+	}
+
+	re := regexp.MustCompile(`mkdir\s+([^:]+):\s*file exists`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) != 2 {
+		return "", false
+	}
+
+	path := filepath.Clean(strings.TrimSpace(matches[1]))
+	if filepath.Base(path) != targetName {
+		return "", false
+	}
+	if !strings.Contains(path, string(filepath.Separator)+"storage-pools"+string(filepath.Separator)) {
+		return "", false
+	}
+	if filepath.Base(filepath.Dir(path)) != "containers" {
+		return "", false
+	}
+
+	return path, true
+}
+
+func staleImportVolumeExists(output string) bool {
+	lowerOutput := strings.ToLower(output)
+	re := regexp.MustCompile(`volume[,\s]+already exists(?:\s+on\s+target)?`)
+	return re.MatchString(lowerOutput)
+}
+
+func staleImportZFSDataset(output, targetName string) (string, bool) {
+	lowerOutput := strings.ToLower(output)
+	if !strings.Contains(lowerOutput, "cannot create") || !strings.Contains(lowerOutput, "dataset already exists") {
+		return "", false
+	}
+
+	re := regexp.MustCompile(`cannot create\s+'?([^':\s]+)'?:\s*dataset already exists`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) != 2 {
+		return "", false
+	}
+
+	dataset := path.Clean(strings.TrimSpace(matches[1]))
+	if !validContainerZFSDataset(dataset, targetName) {
+		return "", false
+	}
+
+	return dataset, true
+}
+
+func missingImportZFSDataset(output, targetName string) (string, bool) {
+	lowerOutput := strings.ToLower(output)
+	if !strings.Contains(lowerOutput, "cannot open") || !strings.Contains(lowerOutput, "dataset does not exist") {
+		return "", false
+	}
+
+	re := regexp.MustCompile(`cannot open\s+'?([^':\s]+)'?:\s*dataset does not exist`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) != 2 {
+		return "", false
+	}
+
+	dataset := path.Clean(strings.TrimSpace(matches[1]))
+	if !validContainerZFSDataset(dataset, targetName) {
+		return "", false
+	}
+
+	return dataset, true
+}
+
+func validContainerZFSDataset(dataset, targetName string) bool {
+	if dataset == "." || strings.HasPrefix(dataset, "/") || strings.Contains(dataset, "@") || strings.Contains(dataset, "#") {
+		return false
+	}
+	if path.Base(dataset) != targetName {
+		return false
+	}
+	if path.Base(path.Dir(dataset)) != "containers" {
+		return false
+	}
+	return strings.Contains(dataset, "/containers/")
+}
+
+func (s *LxcService) removeStaleImportVolume(targetName string) error {
+	pools, err := s.storagePoolNames()
+	if err != nil || len(pools) == 0 {
+		pools = []string{"default"}
+	}
+
+	var errors []string
+	for _, pool := range pools {
+		output, deleteErr := exec.Command("lxc", "storage", "volume", "delete", pool, "container/"+targetName).CombinedOutput()
+		if deleteErr == nil {
+			return nil
+		}
+
+		outputStr := string(output)
+		if strings.Contains(strings.ToLower(outputStr), "not found") {
+			continue
+		}
+		errors = append(errors, fmt.Sprintf("%s: %v, 输出: %s", pool, deleteErr, outputStr))
+	}
+
+	if len(errors) == 0 {
+		return fmt.Errorf("未找到残留存储卷 container/%s", targetName)
+	}
+	return fmt.Errorf(strings.Join(errors, "; "))
+}
+
+func isStaleVolumeNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "未找到残留存储卷")
+}
+
+func (s *LxcService) storagePoolNames() ([]string, error) {
+	output, err := exec.Command("lxc", "storage", "list", "--format", "json").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("读取存储池列表失败: %v, 输出: %s", err, string(output))
+	}
+
+	var rawPools []map[string]interface{}
+	if err := json.Unmarshal(output, &rawPools); err != nil {
+		return nil, fmt.Errorf("解析存储池列表失败: %v, 原始输出: %s", err, string(output))
+	}
+
+	pools := make([]string, 0, len(rawPools))
+	for _, raw := range rawPools {
+		if name := getString(raw, "name"); name != "" {
+			pools = append(pools, name)
+		}
+	}
+	return pools, nil
+}
+
+func removeStaleImportZFSDataset(dataset, targetName string) error {
+	if !validContainerZFSDataset(dataset, targetName) {
+		return fmt.Errorf("拒绝清理不匹配的 ZFS dataset")
+	}
+
+	output, err := exec.Command("zfs", "destroy", "-r", dataset).CombinedOutput()
+	if err != nil {
+		outputStr := string(output)
+		if strings.Contains(strings.ToLower(outputStr), "dataset does not exist") {
+			return nil
+		}
+		return fmt.Errorf("执行 zfs destroy 失败: %v, 输出: %s", err, string(output))
+	}
+	return nil
+}
+
+func removePotentialStaleContainerZFSDatasets(targetName string) error {
+	output, err := exec.Command("zfs", "list", "-H", "-o", "name").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("读取 ZFS dataset 列表失败: %v, 输出: %s", err, string(output))
+	}
+
+	var candidates []string
+	for _, line := range strings.Split(string(output), "\n") {
+		dataset := path.Clean(strings.TrimSpace(line))
+		if validContainerZFSDataset(dataset, targetName) {
+			candidates = append(candidates, dataset)
+		}
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("未找到匹配的 ZFS dataset */containers/%s", targetName)
+	}
+
+	var errors []string
+	for _, dataset := range candidates {
+		if err := removeStaleImportZFSDataset(dataset, targetName); err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", dataset, err))
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+func isStaleZFSDatasetNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "未找到匹配的 ZFS dataset")
+}
+
+func isZFSUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "executable file not found") || strings.Contains(message, "permission denied")
+}
+
+func removeStaleImportMountDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("拒绝删除符号链接")
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("残留路径不是目录")
+	}
+
+	return os.RemoveAll(path)
 }
 
 func configureRootDiskAndGPU(name string) {
