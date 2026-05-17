@@ -1233,13 +1233,19 @@ func (s *LxcService) configureHostname(name string) error {
 		return fmt.Errorf("容器未运行或无法访问: %v", err)
 	}
 
-	script := `set -eu
+	hostnameFile := name + "/etc/hostname"
+	pushCmd := exec.Command("lxc", "file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", hostnameFile)
+	pushCmd.Stdin = strings.NewReader(name + "\n")
+	if output, err := pushCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("写入 /etc/hostname 失败: %v, 输出: %s", err, string(output))
+	}
+
+	script := `set +e
 new_hostname="$1"
-printf '%s\n' "$new_hostname" > /etc/hostname
-hostname "$new_hostname" || true
 if command -v hostnamectl >/dev/null 2>&1; then
   hostnamectl set-hostname "$new_hostname" || true
 fi
+hostname "$new_hostname" || true
 if [ -f /etc/hosts ]; then
   if grep -q '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
     sed -i "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t${new_hostname}/" /etc/hosts
@@ -1259,6 +1265,14 @@ fi`
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%v, 输出: %s", err, string(output))
+	}
+
+	verifyOutput, err := exec.Command("lxc", "file", "pull", hostnameFile, "-").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("验证 /etc/hostname 失败: %v, 输出: %s", err, string(verifyOutput))
+	}
+	if strings.TrimSpace(string(verifyOutput)) != name {
+		return fmt.Errorf("/etc/hostname 未更新，当前值: %s", strings.TrimSpace(string(verifyOutput)))
 	}
 	return nil
 }
