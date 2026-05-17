@@ -63,9 +63,14 @@ func (s *LxcService) ListContainers() ([]models.LxcContainer, error) {
 		return nil, fmt.Errorf("执行lxc命令失败: %v, 输出: %s", err, string(output))
 	}
 
+	jsonOutput, err := extractJSONArray(output)
+	if err != nil {
+		return nil, fmt.Errorf("解析lxc输出失败: %v, 原始输出: %s", err, string(output))
+	}
+
 	// 解析JSON输出
 	var rawContainers []map[string]interface{}
-	if err := json.Unmarshal(output, &rawContainers); err != nil {
+	if err := json.Unmarshal(jsonOutput, &rawContainers); err != nil {
 		return nil, fmt.Errorf("解析lxc输出失败: %v, 原始输出: %s", err, string(output))
 	}
 
@@ -145,6 +150,30 @@ func getStringSlice(m map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+func extractJSONArray(output []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(output)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("输出为空")
+	}
+
+	if json.Valid(trimmed) && trimmed[0] == '[' {
+		return trimmed, nil
+	}
+
+	for i, b := range trimmed {
+		if b != '[' {
+			continue
+		}
+
+		candidate := bytes.TrimSpace(trimmed[i:])
+		if json.Valid(candidate) {
+			return candidate, nil
+		}
+	}
+
+	return nil, fmt.Errorf("未找到 JSON 数组")
 }
 
 func (s *LxcService) DeleteContainer(name string) error {
@@ -1044,7 +1073,11 @@ func (s *LxcService) storagePoolNames() ([]string, error) {
 	}
 
 	var rawPools []map[string]interface{}
-	if err := json.Unmarshal(output, &rawPools); err != nil {
+	jsonOutput, err := extractJSONArray(output)
+	if err != nil {
+		return nil, fmt.Errorf("解析存储池列表失败: %v, 原始输出: %s", err, string(output))
+	}
+	if err := json.Unmarshal(jsonOutput, &rawPools); err != nil {
 		return nil, fmt.Errorf("解析存储池列表失败: %v, 原始输出: %s", err, string(output))
 	}
 
