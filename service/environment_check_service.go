@@ -190,12 +190,20 @@ func (s *EnvironmentCheckService) buildLXCGuides() []models.InstallGuide {
 	case "ubuntu", "debian":
 		commands = append(commands,
 			models.InstallCommand{
-				Label:   "安装 LXD",
-				Command: "sudo apt-get update && sudo apt-get install -y lxd lxd-client",
+				Label:   "安装 snapd",
+				Command: "sudo apt-get update && sudo apt-get install -y snapd",
+			},
+			models.InstallCommand{
+				Label:   "通过 snap 安装 LXD",
+				Command: "sudo snap install lxd",
 			},
 			models.InstallCommand{
 				Label:   "初始化 LXD",
 				Command: "sudo lxd init --auto",
+			},
+			models.InstallCommand{
+				Label:   "授予当前用户访问权限",
+				Command: "getent group lxd | grep -qwF \"$USER\" || sudo usermod -aG lxd \"$USER\"",
 			},
 		)
 	case "centos", "rhel", "rocky", "almalinux", "fedora":
@@ -221,7 +229,7 @@ func (s *EnvironmentCheckService) buildLXCGuides() []models.InstallGuide {
 	return []models.InstallGuide{
 		{
 			Title:       "LXC/LXD 安装",
-			Description: "容器管理页面依赖 `lxc` 命令。安装完成后刷新页面即可读取容器列表。",
+			Description: "容器管理页面依赖 `lxc` 命令。Ubuntu 24.04 等新版本已不再通过 apt 提供 lxd/lxd-client，推荐使用 snap 安装 LXD。安装完成后刷新页面即可读取容器列表。",
 			Commands:    commands,
 		},
 	}

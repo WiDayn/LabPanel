@@ -25,9 +25,10 @@ fi
 echo "正在构建前端..."
 cd frontend
 
-# 检查是否存在 pnpm-lock.yaml，如果不存在则安装依赖
-if [ ! -f "pnpm-lock.yaml" ]; then
-    echo "安装前端依赖..."
+echo "安装前端依赖..."
+if [ -f "pnpm-lock.yaml" ]; then
+    pnpm install --frozen-lockfile
+else
     pnpm install
 fi
 
@@ -55,7 +56,8 @@ go mod tidy
 
 # 构建可执行文件
 echo "编译 Go 程序..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o LabPanel main.go
+GOARCH_VALUE="${GOARCH:-$(go env GOARCH)}"
+CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build -ldflags="-w -s" -o LabPanel main.go
 
 if [ ! -f "LabPanel" ]; then
     echo "错误: 后端构建失败"
@@ -69,4 +71,3 @@ echo "可执行文件: $(pwd)/LabPanel"
 echo "前端文件: $(pwd)/frontend/dist"
 echo ""
 echo "运行方式: ./LabPanel"
-
