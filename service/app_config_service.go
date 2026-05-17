@@ -57,5 +57,12 @@ func (s *AppConfigService) UpdateConfig(req models.UpdateAppConfigRequest) error
 		return fmt.Errorf("写入 .env 失败: %v", err)
 	}
 
+	if err := os.Setenv("LXC_IMAGE", lxcImage); err != nil {
+		return fmt.Errorf("更新当前进程 LXC_IMAGE 失败: %v", err)
+	}
+	if err := os.Setenv("LXC_BACKUP_DIR", lxcBackupDir); err != nil {
+		return fmt.Errorf("更新当前进程 LXC_BACKUP_DIR 失败: %v", err)
+	}
+
 	return nil
 }

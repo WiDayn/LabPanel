@@ -81,6 +81,7 @@ func main() {
 			auth.GET("/lxc/backup-status", handlers.GetLxcBackupStatus)
 			auth.GET("/lxc/restore-status", handlers.GetLxcRestoreStatus)
 			auth.GET("/lxc/backup-archives", handlers.GetLxcBackupArchives)
+			auth.DELETE("/lxc/backup-archives", handlers.DeleteLxcBackupArchive)
 			auth.GET("/lxc/config/:name", handlers.GetLxcContainerConfig)
 			auth.PUT("/lxc/config", handlers.UpdateLxcContainerConfig)
 			auth.PUT("/lxc/password", handlers.ChangePasswordLxcContainer)

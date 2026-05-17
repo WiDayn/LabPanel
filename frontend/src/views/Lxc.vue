@@ -154,7 +154,7 @@
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div class="text-sm font-medium text-gray-900">{{ restore.name }}</div>
-                    <div class="mt-1 text-xs text-gray-600">{{ formatRestoreStatus(restore) }}</div>
+                    <div class="mt-1 text-xs text-gray-600">{{ formatRestoreStatusSummary(restore) }}</div>
                     <div v-if="restore.backupFile" class="mt-1 text-xs text-gray-500 break-all">
                       备份包：{{ restore.backupFile }}
                     </div>
@@ -170,6 +170,15 @@
                     :style="{ width: `${Math.max(5, restore.progress || 0)}%` }"
                   />
                 </div>
+                <details
+                  v-if="hasRestoreLog(restore)"
+                  class="mt-3 rounded-md border border-gray-200 bg-gray-50"
+                >
+                  <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-gray-700">
+                    查看导入日志
+                  </summary>
+                  <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words border-t border-gray-200 px-3 py-2 text-xs text-gray-700">{{ restore.message }}</pre>
+                </details>
               </div>
             </div>
           </div>
@@ -377,12 +386,23 @@
               <div
                 v-for="archive in backupArchives"
                 :key="archive.path"
-                class="border-b border-gray-100 px-3 py-2 text-xs last:border-b-0"
+                class="flex items-start justify-between gap-3 border-b border-gray-100 px-3 py-2 text-xs last:border-b-0"
               >
-                <div class="font-medium text-gray-800 break-all">{{ archive.name }}</div>
-                <div class="mt-1 text-gray-500">
-                  {{ formatArchiveMeta(archive) }}
+                <div class="min-w-0">
+                  <div class="font-medium text-gray-800 break-all">{{ archive.name }}</div>
+                  <div class="mt-1 text-gray-500">
+                    {{ formatArchiveMeta(archive) }}
+                  </div>
                 </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  class="shrink-0"
+                  @click="deleteBackupArchive(archive)"
+                  :disabled="deletingBackupArchive === archive.name"
+                >
+                  {{ deletingBackupArchive === archive.name ? '删除中' : '删除' }}
+                </Button>
               </div>
             </div>
             <p v-else class="mt-2 text-xs text-gray-500">
@@ -486,6 +506,7 @@ const loadingAppConfig = ref(false)
 const savingAppConfig = ref(false)
 const loadingHostInfo = ref(false)
 const loadingBackupArchives = ref(false)
+const deletingBackupArchive = ref('')
 const backupStatuses = ref({})
 const restoreStatuses = ref({})
 const backupArchives = ref([])
@@ -635,6 +656,32 @@ const loadBackupArchives = async ({ silent = true } = {}) => {
     }
   } finally {
     loadingBackupArchives.value = false
+  }
+}
+
+const deleteBackupArchive = async (archive) => {
+  if (!archive?.name) {
+    return
+  }
+  if (!confirm(`确定要删除备份文件 "${archive.name}" 吗？此操作不可恢复！`)) {
+    return
+  }
+
+  deletingBackupArchive.value = archive.name
+  error.value = ''
+  success.value = ''
+
+  try {
+    await api.delete('/lxc/backup-archives', { data: { name: archive.name } })
+    if (newContainer.value.backupFile === archive.name) {
+      newContainer.value.backupFile = ''
+    }
+    success.value = '备份文件删除成功'
+    await loadBackupArchives({ silent: false })
+  } catch (err) {
+    error.value = err.response?.data?.error || '删除备份文件失败'
+  } finally {
+    deletingBackupArchive.value = ''
   }
 }
 
@@ -831,9 +878,27 @@ const formatBackupStatus = (backup) => {
   return [backup.message, percent].filter(Boolean).join(' · ')
 }
 
-const formatRestoreStatus = (restore) => {
+const restoreLogPrefixes = ['输出:', '原始输出:', 'Importing instance:']
+
+const formatRestoreStatusSummary = (restore) => {
   const percent = typeof restore.progress === 'number' ? `${restore.progress}%` : ''
-  return [restore.message, percent].filter(Boolean).join(' · ')
+  const message = restore.message || ''
+  const logIndex = restoreLogPrefixes
+    .map((prefix) => message.indexOf(prefix))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+
+  let summary = logIndex >= 0 ? message.slice(0, logIndex).trim() : message.trim()
+  if (!summary || summary.length > 140) {
+    summary = message.length > 140 ? `${message.slice(0, 140).trim()}...` : message
+  }
+
+  return [summary, percent].filter(Boolean).join(' · ')
+}
+
+const hasRestoreLog = (restore) => {
+  const message = restore.message || ''
+  return message.length > 180 || restoreLogPrefixes.some((prefix) => message.includes(prefix))
 }
 
 const formatBackupTime = (value) => {

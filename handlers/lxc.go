@@ -64,6 +64,22 @@ func GetLxcBackupArchives(c *gin.Context) {
 	})
 }
 
+func DeleteLxcBackupArchive(c *gin.Context) {
+	var req models.DeleteLxcBackupArchiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+
+	lxcService := service.NewLxcService()
+	if err := lxcService.DeleteBackupArchive(req.Name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "备份文件删除成功"})
+}
+
 func DeleteLxcContainer(c *gin.Context) {
 	var req models.DeleteLxcRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -2,7 +2,11 @@ package service
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"LabPanel/config"
 )
 
 func TestExtractJSONArrayFromLxdEmptyListHint(t *testing.T) {
@@ -39,6 +43,32 @@ func TestExtractJSONArrayKeepsNormalJSON(t *testing.T) {
 	}
 	if string(jsonOutput) != string(output) {
 		t.Fatalf("unexpected JSON output: %s", string(jsonOutput))
+	}
+}
+
+func TestDeleteBackupArchive(t *testing.T) {
+	backupDir := t.TempDir()
+	archiveName := "ubuntu2404-20260517-180629.tar.gz"
+	archivePath := filepath.Join(backupDir, archiveName)
+	if err := os.WriteFile(archivePath, []byte("backup"), 0o644); err != nil {
+		t.Fatalf("failed to write backup archive: %v", err)
+	}
+
+	service := &LxcService{cfg: &config.Config{LxcBackupDir: backupDir}}
+	if err := service.DeleteBackupArchive(archiveName); err != nil {
+		t.Fatalf("DeleteBackupArchive returned error: %v", err)
+	}
+
+	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
+		t.Fatalf("expected archive to be deleted, stat err: %v", err)
+	}
+}
+
+func TestDeleteBackupArchiveRejectsTraversal(t *testing.T) {
+	service := &LxcService{cfg: &config.Config{LxcBackupDir: t.TempDir()}}
+
+	if err := service.DeleteBackupArchive("../outside.tar.gz"); err == nil {
+		t.Fatal("expected traversal archive name to be rejected")
 	}
 }
 
