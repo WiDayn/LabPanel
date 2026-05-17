@@ -4,6 +4,8 @@ import App from './App.vue'
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import Lxc from './views/Lxc.vue'
+import LxcMonitor from './views/LxcMonitor.vue'
+import GpuMonitor from './views/GpuMonitor.vue'
 import Document from './views/Document.vue'
 import './style.css'
 
@@ -12,6 +14,8 @@ const routes = [
   { path: '/login', name: 'Login', component: Login },
   { path: '/dashboard', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
   { path: '/lxc', name: 'Lxc', component: Lxc, meta: { requiresAuth: true } },
+  { path: '/lxc-monitor', name: 'LxcMonitor', component: LxcMonitor, meta: { requiresAuth: true } },
+  { path: '/gpu-monitor', name: 'GpuMonitor', component: GpuMonitor, meta: { requiresAuth: true } },
   { path: '/document', name: 'Document', component: Document, meta: { requiresAuth: true } },
 ]
 
@@ -30,4 +34,3 @@ router.beforeEach((to, from, next) => {
 })
 
 createApp(App).use(router).mount('#app')
-
