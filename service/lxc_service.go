@@ -433,6 +433,49 @@ func (s *LxcService) ListBackupArchives() ([]models.LxcBackupArchive, error) {
 	return archives, nil
 }
 
+func (s *LxcService) DeleteBackupArchive(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("备份文件名不能为空")
+	}
+	if filepath.Base(name) != name || strings.Contains(name, string(filepath.Separator)) {
+		return fmt.Errorf("备份文件名不合法")
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".tar.gz") {
+		return fmt.Errorf("只能删除 .tar.gz 备份文件")
+	}
+
+	backupDir := s.backupDir()
+	fullPath := filepath.Join(backupDir, name)
+	cleanBackupDir, err := filepath.Abs(backupDir)
+	if err != nil {
+		return fmt.Errorf("解析备份目录失败: %v", err)
+	}
+	cleanTarget, err := filepath.Abs(fullPath)
+	if err != nil {
+		return fmt.Errorf("解析备份文件路径失败: %v", err)
+	}
+	if filepath.Dir(cleanTarget) != cleanBackupDir {
+		return fmt.Errorf("备份文件路径不合法")
+	}
+
+	info, err := os.Stat(cleanTarget)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("备份文件不存在")
+		}
+		return fmt.Errorf("读取备份文件失败: %v", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("不能删除目录")
+	}
+
+	if err := os.Remove(cleanTarget); err != nil {
+		return fmt.Errorf("删除备份文件失败: %v", err)
+	}
+	return nil
+}
+
 func (s *LxcService) GetContainerConfig(name string) (string, error) {
 	cmd := exec.Command("lxc", "config", "show", name)
 	output, err := cmd.CombinedOutput()
@@ -712,6 +755,10 @@ func (s *LxcService) createContainerFromBackup(targetName, password, backupFile 
 	}
 
 	configureRootDiskAndGPU(targetName)
+
+	if err := s.configureHostname(targetName); err != nil {
+		return fmt.Errorf("配置容器 hostname 失败: %v", err)
+	}
 
 	if err := s.configureSSH(targetName, password); err != nil {
 		return fmt.Errorf("配置SSH失败: %v", err)
@@ -1179,6 +1226,41 @@ func configureRootDiskAndGPU(name string) {
 			_ = output
 		}
 	}
+}
+
+func (s *LxcService) configureHostname(name string) error {
+	if err := s.waitForContainerRunning(name, 60); err != nil {
+		return fmt.Errorf("容器未运行或无法访问: %v", err)
+	}
+
+	script := `set -eu
+new_hostname="$1"
+printf '%s\n' "$new_hostname" > /etc/hostname
+hostname "$new_hostname" || true
+if command -v hostnamectl >/dev/null 2>&1; then
+  hostnamectl set-hostname "$new_hostname" || true
+fi
+if [ -f /etc/hosts ]; then
+  if grep -q '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
+    sed -i "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t${new_hostname}/" /etc/hosts
+  else
+    printf '127.0.1.1\t%s\n' "$new_hostname" >> /etc/hosts
+  fi
+fi
+if [ -f /etc/cloud/cloud.cfg ]; then
+  if grep -q '^preserve_hostname:' /etc/cloud/cloud.cfg; then
+    sed -i 's/^preserve_hostname:.*/preserve_hostname: true/' /etc/cloud/cloud.cfg
+  else
+    printf '\npreserve_hostname: true\n' >> /etc/cloud/cloud.cfg
+  fi
+fi`
+
+	cmd := exec.Command("lxc", "exec", name, "--", "sh", "-c", script, "sh", name)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v, 输出: %s", err, string(output))
+	}
+	return nil
 }
 
 func (s *LxcService) configureSSH(name, password string) error {

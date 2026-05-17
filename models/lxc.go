@@ -123,6 +123,10 @@ type LxcBackupArchiveListResponse struct {
 	Archives []LxcBackupArchive `json:"archives"`
 }
 
+type DeleteLxcBackupArchiveRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
 type GetLxcConfigRequest struct {
 	Name string `uri:"name" binding:"required"`
 }
