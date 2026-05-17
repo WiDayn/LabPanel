@@ -31,6 +31,92 @@ LabPanel 是一个用于管理 FRP 客户端配置和 LXC 容器的面板项目�
 - `config/`: 配置加载
 - `build.sh`: 一键构建脚本
 
+## 一键安装
+
+脚本会自动安装 Go 和 pnpm，拉取/更新项目，编译前后端，并通过交互向导询问：
+
+- LabPanel 访问端口
+- 管理员账号与密码
+- 是否需要配置 FRP
+- 使用已有 `frpc`，还是下载并安装新的 `frpc`
+- 新安装 FRP 时的安装目录，默认是当前执行目录下的 `frp`
+
+如果选择使用已有 `frpc`，脚本会提醒你确认 `frpc.toml` 已启用 `[webServer]`，否则面板无法热重载 FRP。安装完成后，脚本会汇总输出访问地址、账号密码、FRP 路径、配置路径和 service 信息。
+
+推荐在服务器上执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/WiDayn/LabPanel/main/install.sh -o install.sh
+sudo bash install.sh
+```
+
+如果你已经克隆了本仓库，也可以直接运行：
+
+```bash
+sudo ./install.sh
+```
+
+常用安装参数可以通过环境变量传入：
+
+```bash
+sudo REPO_URL=https://github.com/WiDayn/LabPanel.git \
+  INSTALL_DIR=/opt/LabPanel \
+  PORT=8080 \
+  ADMIN_USERNAME=admin \
+  ADMIN_PASSWORD=change-me \
+  USE_FRP=y \
+  FRP_MODE=install \
+  FRP_INSTALL_DIR="$PWD/frp" \
+  FRP_SERVER_ADDR=your-frps.example.com \
+  FRP_SERVER_PORT=7000 \
+  FRP_AUTH_TOKEN=your-token \
+  ./install.sh
+```
+
+默认会创建：
+
+- `labpanel.service`: 启动 LabPanel
+- `frpc.service`: 启动 FRP 客户端，只有选择配置 FRP 时创建
+- `/opt/LabPanel/.env`: LabPanel 运行配置
+- `<FRP_INSTALL_DIR>/frpc.toml`: 新安装 FRP 时生成的客户端配置
+
+如果暂时不想启动服务：
+
+```bash
+sudo START_SERVICES=0 ./install.sh
+```
+
+使用已有 `frpc` 的非交互示例：
+
+```bash
+sudo USE_FRP=y \
+  FRP_MODE=custom \
+  FRPC_PATH=/usr/local/bin/frpc \
+  FRP_CONFIG_PATH=/etc/frp/frpc.toml \
+  ./install.sh
+```
+
+不配置 FRP：
+
+```bash
+sudo USE_FRP=n ./install.sh
+```
+
+## 更新
+
+更新脚本会停止 `labpanel` 和 `frpc`，执行 `git pull --ff-only`，重新编译前后端，然后启动服务：
+
+```bash
+cd /opt/LabPanel
+sudo ./update.sh
+```
+
+如果你的 service 名称不同：
+
+```bash
+sudo APP_SERVICE=labpanel FRP_SERVICE=frpc ./update.sh
+```
+
 ## 快速开始
 
 ### 1. 安装基础依赖
