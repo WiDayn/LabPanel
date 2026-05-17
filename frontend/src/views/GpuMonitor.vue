@@ -1,0 +1,351 @@
+<template>
+  <div class="min-h-screen bg-gray-50">
+    <header class="bg-white shadow-sm border-b">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <h1 class="text-xl font-semibold">显卡监控</h1>
+        <Button variant="outline" @click="handleLogout">退出登录</Button>
+      </div>
+      <Navigation />
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div class="space-y-6">
+        <Card class="p-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold">NVIDIA GPU</h2>
+              <div class="mt-1 text-sm text-gray-600">{{ formatTime(status.updatedAt) }}</div>
+            </div>
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div class="flex rounded-md border border-gray-300 bg-white p-1">
+                <button
+                  v-for="option in rangeOptions"
+                  :key="option.value"
+                  type="button"
+                  class="h-7 min-w-12 rounded px-3 text-xs font-medium transition-colors"
+                  :class="rangeKey === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                  @click="setRange(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <Button variant="outline" size="sm" @click="loadGpuStatus" :disabled="loading">
+                {{ loading ? '刷新中...' : '刷新' }}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {{ error }}
+        </div>
+
+        <Card v-if="!status.available" class="p-6 border-amber-200 bg-amber-50">
+          <h2 class="text-base font-semibold text-amber-900">nvidia-smi 无显卡</h2>
+          <p class="mt-1 text-sm text-amber-800">{{ status.message || '当前宿主机未检测到可用 NVIDIA 显卡。' }}</p>
+        </Card>
+
+        <div v-else class="space-y-6">
+          <div class="grid gap-4 xl:grid-cols-2">
+            <Card v-for="gpu in status.gpus" :key="gpu.uuid" class="p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-900">GPU {{ gpu.index }}</div>
+                  <div class="mt-1 truncate text-sm text-gray-700" :title="gpu.name">{{ gpu.name }}</div>
+                  <div class="mt-1 truncate text-xs text-gray-500" :title="gpu.uuid">{{ gpu.uuid }}</div>
+                </div>
+                <span class="rounded bg-green-100 px-2 py-1 text-xs text-green-700">
+                  {{ gpu.processes?.length || 0 }} 进程
+                </span>
+              </div>
+
+              <div class="mt-4 space-y-3">
+                <div>
+                  <div class="flex justify-between text-xs text-gray-600">
+                    <span>显存</span>
+                    <span>{{ gpu.memoryUsedMiB }} / {{ gpu.memoryTotalMiB }} MiB</span>
+                  </div>
+                  <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                    <div class="h-full rounded-full bg-blue-600" :style="{ width: `${memoryPercent(gpu)}%` }" />
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-xs text-gray-600">
+                  <div>
+                    <div class="font-medium text-gray-900">{{ gpu.utilization }}%</div>
+                    <div>GPU 利用率</div>
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-900">{{ gpu.temperature }}°C</div>
+                    <div>温度</div>
+                  </div>
+                </div>
+                <GpuMemoryChart
+                  :series="gpu.memorySeries || []"
+                  :total-memory="gpu.memoryTotalMiB"
+                />
+              </div>
+            </Card>
+          </div>
+
+          <Card class="p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="text-base font-semibold">显卡进程</h2>
+              <span class="text-xs text-gray-500">{{ allProcesses.length }} 个</span>
+            </div>
+
+            <div v-if="allProcesses.length" class="mt-4 overflow-x-auto">
+              <table class="w-full border-collapse text-sm">
+                <thead>
+                  <tr class="border-b text-left text-xs text-gray-500">
+                    <th class="px-2 py-2 font-medium">GPU</th>
+                    <th class="px-2 py-2 font-medium">PID</th>
+                    <th class="px-2 py-2 font-medium">进程</th>
+                    <th class="px-2 py-2 font-medium">归属</th>
+                    <th class="px-2 py-2 text-right font-medium">显存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="process in allProcesses" :key="`${process.gpuUuid}-${process.pid}-${process.processName}`" class="border-b last:border-b-0">
+                    <td class="px-2 py-2 text-gray-700">GPU {{ gpuIndexByUuid[process.gpuUuid] ?? '-' }}</td>
+                    <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
+                    <td class="px-2 py-2 text-gray-900">{{ process.processName }}</td>
+                    <td class="px-2 py-2">
+                      <span
+                        class="rounded px-2 py-1 text-xs"
+                        :class="process.ownerType === 'container' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'"
+                      >
+                        {{ ownerLabel(process) }}
+                      </span>
+                    </td>
+                    <td class="px-2 py-2 text-right text-gray-900">{{ process.usedMemoryMiB }} MiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+              当前没有进程占用 NVIDIA 显卡。
+            </div>
+          </Card>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script setup>
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import api from '@/utils/api'
+import Button from '@/components/ui/Button.vue'
+import Card from '@/components/ui/Card.vue'
+import Navigation from '@/components/Navigation.vue'
+
+const chartColors = ['#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#0891b2', '#dc2626', '#4f46e5', '#ca8a04']
+
+const GpuMemoryChart = defineComponent({
+  name: 'GpuMemoryChart',
+  props: {
+    series: { type: Array, required: true },
+    totalMemory: { type: Number, required: true },
+  },
+  setup(props) {
+    const width = 680
+    const height = 220
+    const padding = { top: 18, right: 18, bottom: 28, left: 56 }
+
+    const maxValue = computed(() => {
+      const values = props.series.flatMap((item) => (item.points || []).map((point) => Number(point.usedMemoryMiB || 0)))
+      return Math.max(...values, props.totalMemory || 0, 1)
+    })
+
+    const linePath = (points) => {
+      if (!points?.length) return ''
+      const usableWidth = width - padding.left - padding.right
+      const usableHeight = height - padding.top - padding.bottom
+      return points.map((point, index) => {
+        const x = padding.left + (points.length === 1 ? usableWidth : (index / (points.length - 1)) * usableWidth)
+        const y = padding.top + usableHeight - (Number(point.usedMemoryMiB || 0) / maxValue.value) * usableHeight
+        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+      }).join(' ')
+    }
+
+    const latestValue = (item) => {
+      const points = item.points || []
+      if (!points.length) return 0
+      return Number(points[points.length - 1].usedMemoryMiB || 0)
+    }
+    const xTicks = computed(() => {
+      const longestSeries = props.series.reduce((longest, item) => {
+        const points = item.points || []
+        return points.length > longest.length ? points : longest
+      }, [])
+      return buildTimeTicks(longestSeries, width, padding)
+    })
+
+    return () => h('div', { class: 'mt-4' }, [
+      h('div', { class: 'flex items-center justify-between gap-3' }, [
+        h('div', { class: 'text-xs font-medium text-gray-700' }, '容器显存占用'),
+        h('div', { class: 'text-xs text-gray-500' }, `${props.series.length} 条曲线`),
+      ]),
+      h('div', { class: 'mt-2 h-56 overflow-hidden rounded-md border border-gray-200 bg-white' }, [
+        props.series.length
+          ? h('svg', { viewBox: `0 0 ${width} ${height}`, class: 'h-full w-full' }, [
+              h('line', { x1: padding.left, y1: height - padding.bottom, x2: width - padding.right, y2: height - padding.bottom, stroke: '#e5e7eb' }),
+              h('line', { x1: padding.left, y1: padding.top, x2: padding.left, y2: height - padding.bottom, stroke: '#e5e7eb' }),
+              h('text', { x: padding.left - 8, y: padding.top + 4, 'text-anchor': 'end', class: 'fill-gray-500 text-[10px]' }, `${maxValue.value.toFixed(0)} MiB`),
+              h('text', { x: padding.left - 8, y: height - padding.bottom, 'text-anchor': 'end', class: 'fill-gray-500 text-[10px]' }, '0 MiB'),
+              ...xTicks.value.flatMap((tick) => [
+                h('line', { x1: tick.x, y1: height - padding.bottom, x2: tick.x, y2: height - padding.bottom + 4, stroke: '#d1d5db' }),
+                h('text', { x: tick.x, y: height - 10, 'text-anchor': 'middle', class: 'fill-gray-500 text-[10px]' }, tick.label),
+              ]),
+              ...props.series.map((item, index) => h('path', {
+                d: linePath(item.points || []),
+                fill: 'none',
+                stroke: chartColors[index % chartColors.length],
+                'stroke-width': 2.5,
+                'stroke-linejoin': 'round',
+                'stroke-linecap': 'round',
+              })),
+            ])
+          : h('div', { class: 'flex h-full items-center justify-center text-sm text-gray-500' }, '等待显存采样数据'),
+      ]),
+      props.series.length
+        ? h('div', { class: 'mt-3 flex flex-wrap gap-3' }, props.series.map((item, index) =>
+            h('div', { class: 'flex items-center gap-2 text-xs text-gray-600' }, [
+              h('span', { class: 'h-2.5 w-2.5 rounded-full', style: { backgroundColor: chartColors[index % chartColors.length] } }),
+              h('span', { class: 'font-medium text-gray-800' }, item.label),
+              h('span', `${latestValue(item).toFixed(0)} MiB`),
+            ])
+          ))
+        : null,
+    ])
+  },
+})
+
+const buildTimeTicks = (points, width, padding) => {
+  if (!points?.length) {
+    return []
+  }
+  const maxTicks = 4
+  const tickCount = Math.min(maxTicks, points.length)
+  const indexes = new Set()
+  if (tickCount === 1) {
+    indexes.add(points.length - 1)
+  } else {
+    for (let i = 0; i < tickCount; i++) {
+      indexes.add(Math.round((i * (points.length - 1)) / (tickCount - 1)))
+    }
+  }
+
+  const usableWidth = width - padding.left - padding.right
+  return [...indexes].sort((a, b) => a - b).map((index) => {
+    const x = padding.left + (points.length === 1 ? usableWidth : (index / (points.length - 1)) * usableWidth)
+    return {
+      x,
+      label: formatAxisTime(points[index]?.timestamp),
+    }
+  }).filter((tick) => tick.label)
+}
+
+const formatAxisTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  if (sameDay) {
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+  return `${date.getMonth() + 1}/${date.getDate()} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+}
+
+const router = useRouter()
+const loading = ref(false)
+const error = ref('')
+const rangeKey = ref('1h')
+const status = ref({
+  available: false,
+  message: '',
+  updatedAt: '',
+  gpus: [],
+})
+let refreshTimer = null
+
+const rangeOptions = [
+  { label: '1h', value: '1h' },
+  { label: '24h', value: '24h' },
+  { label: '7d', value: '7d' },
+  { label: '30d', value: '30d' },
+]
+
+const allProcesses = computed(() =>
+  (status.value.gpus || [])
+    .flatMap((gpu) => (gpu.processes || []).map((process) => ({ ...process, gpuUuid: process.gpuUuid || gpu.uuid })))
+    .sort((a, b) => b.usedMemoryMiB - a.usedMemoryMiB)
+)
+
+const gpuIndexByUuid = computed(() => {
+  const mapping = {}
+  for (const gpu of status.value.gpus || []) {
+    mapping[gpu.uuid] = gpu.index
+  }
+  return mapping
+})
+
+const loadGpuStatus = async () => {
+  loading.value = true
+  error.value = ''
+  try {
+    const response = await api.get('/gpu/monitor', {
+      params: { range: rangeKey.value },
+    })
+    status.value = response.data || status.value
+  } catch (err) {
+    error.value = err.response?.data?.error || '加载显卡监控失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+const setRange = async (value) => {
+  rangeKey.value = value
+  await loadGpuStatus()
+}
+
+const memoryPercent = (gpu) => {
+  if (!gpu.memoryTotalMiB) {
+    return 0
+  }
+  return Math.min(100, Math.max(0, (gpu.memoryUsedMiB / gpu.memoryTotalMiB) * 100))
+}
+
+const ownerLabel = (process) => {
+  if (process.ownerType === 'container') {
+    return process.containerName || '容器'
+  }
+  return '宿主机'
+}
+
+const formatTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  router.push('/login')
+}
+
+onMounted(() => {
+  loadGpuStatus()
+  refreshTimer = window.setInterval(loadGpuStatus, 15 * 1000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+  }
+})
+</script>

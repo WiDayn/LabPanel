@@ -139,3 +139,49 @@ type UpdateLxcConfigRequest struct {
 	Name   string `json:"name" binding:"required"`
 	Config string `json:"config" binding:"required"`
 }
+
+type LxcMetricsPoint struct {
+	Timestamp      time.Time `json:"timestamp"`
+	CPUPercent     float64   `json:"cpuPercent"`
+	MemoryBytes    int64     `json:"memoryBytes"`
+	Processes      int64     `json:"processes"`
+	NetworkRxBps   float64   `json:"networkRxBps"`
+	NetworkTxBps   float64   `json:"networkTxBps"`
+	DiskReadBps    float64   `json:"diskReadBps"`
+	DiskWriteBps   float64   `json:"diskWriteBps"`
+	DiskUsageBytes int64     `json:"diskUsageBytes"`
+	NetworkRxBytes int64     `json:"networkRxBytes"`
+	NetworkTxBytes int64     `json:"networkTxBytes"`
+	DiskReadBytes  int64     `json:"diskReadBytes"`
+	DiskWriteBytes int64     `json:"diskWriteBytes"`
+}
+
+type LxcMetricsContainerSummary struct {
+	Name           string    `json:"name"`
+	State          string    `json:"state"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	CPUPercent     float64   `json:"cpuPercent"`
+	MemoryBytes    int64     `json:"memoryBytes"`
+	Processes      int64     `json:"processes"`
+	NetworkRxBps   float64   `json:"networkRxBps"`
+	NetworkTxBps   float64   `json:"networkTxBps"`
+	DiskReadBps    float64   `json:"diskReadBps"`
+	DiskWriteBps   float64   `json:"diskWriteBps"`
+	DiskUsageBytes int64     `json:"diskUsageBytes"`
+	NetworkRxBytes int64     `json:"networkRxBytes"`
+	NetworkTxBytes int64     `json:"networkTxBytes"`
+	DiskReadBytes  int64     `json:"diskReadBytes"`
+	DiskWriteBytes int64     `json:"diskWriteBytes"`
+}
+
+type LxcMetricsSeries struct {
+	Name   string            `json:"name"`
+	Points []LxcMetricsPoint `json:"points"`
+}
+
+type LxcMetricsResponse struct {
+	Range           string                       `json:"range"`
+	IntervalSeconds int                          `json:"intervalSeconds"`
+	Containers      []LxcMetricsContainerSummary `json:"containers"`
+	Selected        *LxcMetricsSeries            `json:"selected,omitempty"`
+}

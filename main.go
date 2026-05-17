@@ -4,6 +4,7 @@ import (
 	"LabPanel/config"
 	"LabPanel/handlers"
 	"LabPanel/middleware"
+	"LabPanel/service"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
 	}
+	service.GetLxcMetricsService().Start()
+	service.GetGPUMonitorService().Start()
 
 	r := gin.Default()
 
@@ -59,6 +62,7 @@ func main() {
 			auth.PUT("/config", handlers.UpdateConfig)
 			auth.POST("/restart", handlers.RestartService)
 			auth.GET("/status", handlers.GetServiceStatus)
+			auth.GET("/gpu/monitor", handlers.GetGPUMonitor)
 
 			// 代理管理
 			auth.GET("/proxies", handlers.GetProxyList)
@@ -82,6 +86,7 @@ func main() {
 			auth.GET("/lxc/restore-status", handlers.GetLxcRestoreStatus)
 			auth.GET("/lxc/backup-archives", handlers.GetLxcBackupArchives)
 			auth.DELETE("/lxc/backup-archives", handlers.DeleteLxcBackupArchive)
+			auth.GET("/lxc/metrics", handlers.GetLxcMetrics)
 			auth.GET("/lxc/config/:name", handlers.GetLxcContainerConfig)
 			auth.PUT("/lxc/config", handlers.UpdateLxcContainerConfig)
 			auth.PUT("/lxc/password", handlers.ChangePasswordLxcContainer)
