@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	AppTitle      string
 	Port          string
 	JWTSecret     string
 	AdminUsername string
@@ -34,6 +35,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
+		AppTitle:      getEnv("APP_TITLE", "LabPanel 管理面板"),
 		Port:          getEnv("PORT", "8080"),
 		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),

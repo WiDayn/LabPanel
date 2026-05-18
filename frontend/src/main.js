@@ -4,16 +4,19 @@ import App from './App.vue'
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import Lxc from './views/Lxc.vue'
+import HostMonitor from './views/HostMonitor.vue'
 import LxcMonitor from './views/LxcMonitor.vue'
 import GpuMonitor from './views/GpuMonitor.vue'
 import Document from './views/Document.vue'
+import { loadPublicConfig } from './utils/publicConfig'
 import './style.css'
 
 const routes = [
-  { path: '/', redirect: '/dashboard' },
+  { path: '/', redirect: '/overview' },
   { path: '/login', name: 'Login', component: Login },
   { path: '/dashboard', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
   { path: '/lxc', name: 'Lxc', component: Lxc, meta: { requiresAuth: true } },
+  { path: '/overview', name: 'HostMonitor', component: HostMonitor, meta: { requiresAuth: true } },
   { path: '/lxc-monitor', name: 'LxcMonitor', component: LxcMonitor, meta: { requiresAuth: true } },
   { path: '/gpu-monitor', name: 'GpuMonitor', component: GpuMonitor, meta: { requiresAuth: true } },
   { path: '/document', name: 'Document', component: Document, meta: { requiresAuth: true } },
@@ -33,4 +36,6 @@ router.beforeEach((to, from, next) => {
   }
 })
 
-createApp(App).use(router).mount('#app')
+loadPublicConfig().finally(() => {
+  createApp(App).use(router).mount('#app')
+})

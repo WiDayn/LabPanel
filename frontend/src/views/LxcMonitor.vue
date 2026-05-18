@@ -1,20 +1,11 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <header class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-semibold">容器监控</h1>
-        <Button variant="outline" @click="handleLogout">退出登录</Button>
-      </div>
-      <Navigation />
-    </header>
+    <AppHeader />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
         <Card class="p-4">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 class="text-base font-semibold">LXD 宿主机侧监控</h2>
-            </div>
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
               <select
                 v-model="selectedName"
@@ -183,11 +174,10 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
-import Navigation from '@/components/Navigation.vue'
+import AppHeader from '@/components/AppHeader.vue'
 
 const MetricChart = defineComponent({
   name: 'MetricChart',
@@ -289,7 +279,6 @@ const formatAxisTime = (value) => {
   return `${date.getMonth() + 1}/${date.getDate()} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
 }
 
-const router = useRouter()
 const loading = ref(false)
 const error = ref('')
 const rangeKey = ref('1h')
@@ -363,11 +352,6 @@ const formatTime = (value) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString('zh-CN', { hour12: false })
-}
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  router.push('/login')
 }
 
 onMounted(() => {
