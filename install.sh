@@ -90,6 +90,13 @@ prompt_choice() {
     done
 }
 
+normalize_service_name() {
+    local name
+    name="${1:-}"
+    name="${name%.service}"
+    echo "$name"
+}
+
 collect_inputs() {
     if [ ! -t 0 ]; then
         USE_FRP="${USE_FRP:-y}"
@@ -294,8 +301,9 @@ ensure_env() {
     set_env_value "$env_file" "JWT_SECRET" "$jwt"
     set_env_value "$env_file" "ADMIN_USERNAME" "$ADMIN_USERNAME"
     set_env_value "$env_file" "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
+    set_env_value "$env_file" "APP_SERVICE" "$APP_SERVICE"
+    set_env_value "$env_file" "FRP_SERVICE" "$FRP_SERVICE"
     set_env_value "$env_file" "TOML_PATH" "$FRP_CONFIG_PATH"
-    set_env_value "$env_file" "SERVICE_NAME" "$FRP_SERVICE"
     set_env_value "$env_file" "FRPC_PATH" "$FRPC_PATH"
     set_env_value "$env_file" "DOCS_PATH" "${INSTALL_DIR}/docs"
     set_env_value "$env_file" "UPLOAD_PATH" "${INSTALL_DIR}/uploads"
@@ -484,11 +492,12 @@ print_summary() {
 main() {
     need_root "$@"
     collect_inputs
+    APP_SERVICE="$(normalize_service_name "$APP_SERVICE")"
+    FRP_SERVICE="$(normalize_service_name "$FRP_SERVICE")"
     install_base_packages
     install_go
     install_pnpm
     prepare_source
-    ensure_env
     build_app
     if [ "$FRP_MODE" = "install" ]; then
         install_frp
@@ -497,6 +506,7 @@ main() {
         [ -x "$FRPC_PATH" ] || log "提醒: ${FRPC_PATH} 不存在或不可执行，请安装后再启动 ${FRP_SERVICE}"
     fi
     write_services
+    ensure_env
     start_services
     print_summary
 }

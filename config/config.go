@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -13,7 +14,8 @@ type Config struct {
 	AdminUsername string
 	AdminPassword string
 	TomlPath      string
-	ServiceName   string
+	AppService    string
+	FrpService    string
 	FrpcPath      string
 	DocsPath      string
 	UploadPath    string
@@ -39,7 +41,8 @@ func Load() (*Config, error) {
 		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
 		AdminPassword: getEnv("ADMIN_PASSWORD", "admin123"),
 		TomlPath:      getEnv("TOML_PATH", "/etc/frp/frpc.toml"),
-		ServiceName:   getEnv("SERVICE_NAME", "frpc"),
+		AppService:    normalizeServiceName(getEnv("APP_SERVICE", "labpanel")),
+		FrpService:    normalizeServiceName(getEnvWithFallback("FRP_SERVICE", "SERVICE_NAME", "frpc")),
 		FrpcPath:      frpcPath,
 		DocsPath:      getEnv("DOCS_PATH", "./docs"),
 		UploadPath:    getEnv("UPLOAD_PATH", "./uploads"),
@@ -55,4 +58,15 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getEnvWithFallback(key, fallbackKey, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return getEnv(fallbackKey, defaultValue)
+}
+
+func normalizeServiceName(name string) string {
+	return strings.TrimSuffix(strings.TrimSpace(name), ".service")
 }

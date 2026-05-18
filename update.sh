@@ -2,12 +2,19 @@
 
 set -euo pipefail
 
-APP_SERVICE="${APP_SERVICE:-labpanel}"
-FRP_SERVICE="${FRP_SERVICE:-frpc}"
-START_SERVICES="${START_SERVICES:-1}"
+APP_SERVICE_OVERRIDE="${APP_SERVICE-}"
+FRP_SERVICE_OVERRIDE="${FRP_SERVICE-}"
+START_SERVICES_OVERRIDE="${START_SERVICES-}"
 
 log() {
     echo "[update] $*"
+}
+
+normalize_service_name() {
+    local name
+    name="${1:-}"
+    name="${name%.service}"
+    echo "$name"
 }
 
 need_root() {
@@ -16,12 +23,26 @@ need_root() {
     fi
 }
 
+load_env() {
+    if [ -f .env ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . ./.env
+        set +a
+    fi
+
+    APP_SERVICE="$(normalize_service_name "${APP_SERVICE_OVERRIDE:-${APP_SERVICE:-labpanel}}")"
+    FRP_SERVICE="$(normalize_service_name "${FRP_SERVICE_OVERRIDE:-${FRP_SERVICE:-${SERVICE_NAME:-frpc}}}")"
+    START_SERVICES="${START_SERVICES_OVERRIDE:-${START_SERVICES:-1}}"
+}
+
 main() {
     need_root "$@"
 
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     cd "$script_dir"
+    load_env
 
     log "停止 services..."
     systemctl stop "$APP_SERVICE" 2>/dev/null || true
