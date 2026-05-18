@@ -35,6 +35,7 @@ type HostProcess struct {
 
 type HostMemoryModule struct {
 	Locator      string `json:"locator"`
+	BankLocator  string `json:"bankLocator"`
 	SizeBytes    int64  `json:"sizeBytes"`
 	Manufacturer string `json:"manufacturer"`
 	PartNumber   string `json:"partNumber"`

@@ -578,10 +578,17 @@ const formatMemoryModuleValue = (module) => {
   const speed = isUsefulMemoryText(module.speed) ? module.speed : ''
   return [brand, formatCapacityBytes(module.sizeBytes), speed].filter(Boolean).join(' ')
 }
+const formatMemoryModuleLabel = (module, index) => {
+  const bankLocator = isUsefulMemoryText(module.bankLocator) ? module.bankLocator : ''
+  const locator = isUsefulMemoryText(module.locator) ? module.locator : ''
+  if (bankLocator && locator && bankLocator !== locator) {
+    return `${bankLocator} / ${locator}`
+  }
+  return bankLocator || locator || `DIMM${index + 1}`
+}
 const formatMemoryModuleDetail = (module, index) => {
-  const label = module.locator || `DIMM${index + 1}`
   return {
-    label,
+    label: formatMemoryModuleLabel(module, index),
     value: formatMemoryModuleValue(module),
   }
 }
@@ -590,7 +597,10 @@ const sortedMemoryModules = (modules) => {
   return modules
     .filter((module) => Number(module.sizeBytes || 0) > 0)
     .slice()
-    .sort((left, right) => memoryModuleCollator.compare(left.locator || '', right.locator || ''))
+    .sort((left, right) => memoryModuleCollator.compare(
+      `${left.bankLocator || ''} ${left.locator || ''}`,
+      `${right.bankLocator || ''} ${right.locator || ''}`,
+    ))
 }
 const formatMemoryModuleDetails = (modules) => sortedMemoryModules(modules).map(formatMemoryModuleDetail)
 const formatMemorySummary = (system) => {
