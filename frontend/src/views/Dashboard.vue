@@ -1,12 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <header class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-semibold">FRP 配置管理</h1>
-        <Button variant="outline" @click="handleLogout">退出登录</Button>
-      </div>
-      <Navigation />
-    </header>
+    <AppHeader />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
@@ -49,83 +43,103 @@
         </Card>
 
         <!-- 服务状态卡片 -->
-        <Card v-if="environmentCheck?.frp.ready !== false" class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">服务状态</h2>
-            <Button @click="refreshStatus" :disabled="loading">刷新状态</Button>
-          </div>
-          <div class="flex items-center gap-4 mb-4">
-            <div class="flex items-center gap-2">
-              <div
-                :class="[
-                  'w-3 h-3 rounded-full',
-                  serviceStatus.active ? 'bg-green-500' : 'bg-red-500',
-                ]"
-              ></div>
-              <span>{{ serviceStatus.active ? '运行中' : '已停止' }}</span>
+        <section
+          v-if="environmentCheck?.frp.ready !== false"
+          class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm"
+        >
+          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900">服务状态</h2>
+              <div class="mt-1 text-xs text-gray-500">状态: {{ serviceStatus.status }}</div>
             </div>
-            <span class="text-sm text-gray-600">状态: {{ serviceStatus.status }}</span>
+            <Button variant="outline" size="sm" @click="refreshStatus" :disabled="loading">
+              {{ loading ? '刷新中...' : '刷新状态' }}
+            </Button>
           </div>
-          <div v-if="serviceStatus.statusDetail" class="mt-4">
-            <h3 class="text-sm font-medium mb-2">详细状态:</h3>
-            <pre class="bg-gray-100 p-4 rounded text-xs overflow-auto max-h-64">{{ serviceStatus.statusDetail }}</pre>
+          <div class="border-t border-gray-200 p-4">
+            <div class="flex flex-wrap items-center gap-4">
+              <div class="flex items-center gap-2">
+                <div
+                  :class="[
+                    'h-3 w-3 rounded-full',
+                    serviceStatus.active ? 'bg-green-500' : 'bg-red-500',
+                  ]"
+                ></div>
+                <span class="text-sm font-medium text-gray-900">
+                  {{ serviceStatus.active ? '运行中' : '已停止' }}
+                </span>
+              </div>
+              <span class="text-sm text-gray-600">状态: {{ serviceStatus.status }}</span>
+            </div>
+            <div v-if="serviceStatus.statusDetail" class="mt-4">
+              <h3 class="text-sm font-medium text-gray-900">详细状态</h3>
+              <pre class="mt-2 max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800">{{ serviceStatus.statusDetail }}</pre>
+            </div>
           </div>
-        </Card>
+        </section>
 
         <!-- 代理列表卡片 -->
-        <Card v-if="environmentCheck?.frp.ready !== false" class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">代理映射</h2>
+        <section
+          v-if="environmentCheck?.frp.ready !== false"
+          class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm"
+        >
+          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900">代理映射</h2>
+              <div class="mt-1 text-xs text-gray-500">{{ proxies.length }} 个代理</div>
+            </div>
             <div class="flex gap-2">
-              <Button variant="outline" @click="loadProxies" :disabled="loading">
-                重载配置
+              <Button variant="outline" size="sm" @click="loadProxies" :disabled="loading">
+                {{ loading ? '重载中...' : '重载配置' }}
               </Button>
-              <Button @click="showAddDialog = true">新增代理</Button>
+              <Button size="sm" @click="showAddDialog = true">新增代理</Button>
             </div>
           </div>
-          <div v-if="error" class="mb-4 text-red-500 text-sm">{{ error }}</div>
-          <div v-if="success" class="mb-4 text-green-500 text-sm">{{ success }}</div>
-          
-          <div v-if="proxies.length === 0" class="text-center py-8 text-gray-500">
-            暂无代理配置
+          <div class="border-t border-gray-200 p-4">
+            <div v-if="error" class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+            <div v-if="success" class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{{ success }}</div>
+
+            <div v-if="proxies.length === 0" class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+              暂无代理配置
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full border-collapse text-sm">
+                <thead>
+                  <tr class="border-b text-left text-xs text-gray-500">
+                    <th class="px-2 py-2 font-medium">名称</th>
+                    <th class="px-2 py-2 font-medium">类型</th>
+                    <th class="px-2 py-2 font-medium">本地IP</th>
+                    <th class="px-2 py-2 font-medium">本地端口</th>
+                    <th class="px-2 py-2 font-medium">映射地址</th>
+                    <th class="px-2 py-2 font-medium">备注</th>
+                    <th class="px-2 py-2 font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(proxy, index) in proxies" :key="index" class="border-b last:border-b-0">
+                    <td class="px-2 py-2 font-medium text-gray-900">{{ proxy.name }}</td>
+                    <td class="px-2 py-2 text-gray-700">{{ proxy.type }}</td>
+                    <td class="px-2 py-2 text-gray-700">{{ proxy.localIP }}</td>
+                    <td class="px-2 py-2 text-gray-700">{{ proxy.localPort }}</td>
+                    <td class="px-2 py-2 text-gray-900">
+                      <span v-if="frpConfig.serverAddr">
+                        {{ frpConfig.serverAddr }}:{{ proxy.remotePort }}
+                      </span>
+                      <span v-else>{{ proxy.remotePort }}</span>
+                    </td>
+                    <td class="px-2 py-2 text-gray-600">{{ proxy.comment || '-' }}</td>
+                    <td class="px-2 py-2">
+                      <div class="flex gap-2">
+                        <Button variant="outline" size="sm" @click="editProxy(index)">编辑</Button>
+                        <Button variant="destructive" size="sm" @click="deleteProxy(index)">删除</Button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full border-collapse">
-              <thead>
-                <tr class="border-b">
-                  <th class="text-left p-2">名称</th>
-                  <th class="text-left p-2">类型</th>
-                  <th class="text-left p-2">本地IP</th>
-                  <th class="text-left p-2">本地端口</th>
-                  <th class="text-left p-2">映射地址</th>
-                  <th class="text-left p-2">备注</th>
-                  <th class="text-left p-2">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(proxy, index) in proxies" :key="index" class="border-b">
-                  <td class="p-2">{{ proxy.name }}</td>
-                  <td class="p-2">{{ proxy.type }}</td>
-                  <td class="p-2">{{ proxy.localIP }}</td>
-                  <td class="p-2">{{ proxy.localPort }}</td>
-                  <td class="p-2">
-                    <span v-if="frpConfig.serverAddr">
-                      {{ frpConfig.serverAddr }}:{{ proxy.remotePort }}
-                    </span>
-                    <span v-else>{{ proxy.remotePort }}</span>
-                  </td>
-                  <td class="p-2 text-sm text-gray-600">{{ proxy.comment || '-' }}</td>
-                  <td class="p-2">
-                    <div class="flex gap-2">
-                      <Button variant="outline" size="sm" @click="editProxy(index)">编辑</Button>
-                      <Button variant="destructive" size="sm" @click="deleteProxy(index)">删除</Button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        </section>
       </div>
     </main>
 
@@ -178,14 +192,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Card from '@/components/ui/Card.vue'
-import Navigation from '@/components/Navigation.vue'
+import AppHeader from '@/components/AppHeader.vue'
 
-const router = useRouter()
 const proxies = ref([])
 const frpConfig = ref({ serverAddr: '', serverPort: 0 })
 const serviceStatus = ref({ active: false, status: 'unknown', statusDetail: '' })
@@ -343,12 +355,6 @@ const checkEnvironment = async () => {
   } finally {
     checkingEnvironment.value = false
   }
-}
-
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  router.push('/login')
 }
 
 onMounted(() => {
