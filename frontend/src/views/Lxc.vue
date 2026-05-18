@@ -1,12 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <header class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-semibold">LXC 容器管理</h1>
-        <Button variant="outline" @click="handleLogout">退出登录</Button>
-      </div>
-      <Navigation />
-    </header>
+    <AppHeader />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
@@ -489,14 +483,12 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
-import Navigation from '@/components/Navigation.vue'
+import AppHeader from '@/components/AppHeader.vue'
 
-const router = useRouter()
 const containers = ref([])
 const environmentCheck = ref(null)
 const checkingEnvironment = ref(false)
@@ -1108,11 +1100,6 @@ const checkEnvironment = async () => {
   } finally {
     checkingEnvironment.value = false
   }
-}
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  router.push('/login')
 }
 
 onMounted(() => {

@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50">
     <Card class="w-full max-w-md p-8">
-      <h1 class="text-2xl font-bold text-center mb-6">LabPanel 管理面板</h1>
+      <h1 class="text-2xl font-bold text-center mb-6">{{ appTitle }}</h1>
       <form @submit.prevent="handleLogin" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-2">用户名</label>
@@ -36,6 +36,7 @@ import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Card from '@/components/ui/Card.vue'
+import { appTitle } from '@/utils/publicConfig'
 
 const router = useRouter()
 const username = ref('')
@@ -54,7 +55,7 @@ const handleLogin = async () => {
     })
 
     localStorage.setItem('token', response.data.token)
-    router.push('/dashboard')
+    router.push('/overview')
   } catch (err) {
     error.value = err.response?.data?.error || '登录失败，请检查用户名和密码'
   } finally {

@@ -5,7 +5,11 @@ import (
 	"LabPanel/handlers"
 	"LabPanel/middleware"
 	"LabPanel/service"
+	"html"
 	"log"
+	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,6 +21,7 @@ func main() {
 	}
 	service.GetLxcMetricsService().Start()
 	service.GetGPUMonitorService().Start()
+	service.GetHostMetricsService().Start()
 
 	r := gin.Default()
 
@@ -48,6 +53,7 @@ func main() {
 	// API 路由
 	api := r.Group("/api")
 	{
+		api.GET("/public-config", handlers.GetPublicConfig)
 		api.POST("/login", handlers.Login)
 
 		// 需要鉴权的路由
@@ -57,6 +63,7 @@ func main() {
 			auth.GET("/check", handlers.GetEnvironmentCheck)
 			auth.GET("/app-config", handlers.GetAppConfig)
 			auth.GET("/host-info", handlers.GetHostInfo)
+			auth.GET("/host/metrics", handlers.GetHostMetrics)
 			auth.PUT("/app-config", handlers.UpdateAppConfig)
 			auth.GET("/config", handlers.GetConfig)
 			auth.PUT("/config", handlers.UpdateConfig)
@@ -112,11 +119,24 @@ func main() {
 			return
 		}
 		// 其他请求返回 index.html（用于 Vue Router）
-		c.File("./frontend/dist/index.html")
+		serveIndexHTML(c, cfg.AppTitle)
 	})
 
 	log.Printf("服务器启动在端口 %s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)
 	}
+}
+
+func serveIndexHTML(c *gin.Context, appTitle string) {
+	data, err := os.ReadFile("./frontend/dist/index.html")
+	if err != nil {
+		c.File("./frontend/dist/index.html")
+		return
+	}
+
+	title := html.EscapeString(appTitle)
+	content := strings.ReplaceAll(string(data), "%APP_TITLE%", title)
+	content = strings.Replace(content, "<title>LabPanel 管理面板</title>", "<title>"+title+"</title>", 1)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(content))
 }

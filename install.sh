@@ -10,6 +10,7 @@ FRP_SERVICE="${FRP_SERVICE:-frpc}"
 FRP_VERSION="${FRP_VERSION:-latest}"
 GO_VERSION="${GO_VERSION:-1.22.12}"
 PORT="${PORT:-8080}"
+APP_TITLE="${APP_TITLE:-LabPanel 管理面板}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 JWT_SECRET="${JWT_SECRET:-}"
@@ -133,6 +134,7 @@ collect_inputs() {
     echo "LabPanel 安装向导"
     echo
     PORT="$(prompt_text "LabPanel 访问端口" "$PORT")"
+    APP_TITLE="$(prompt_text "面板标题" "$APP_TITLE")"
     ADMIN_USERNAME="$(prompt_text "管理员账号" "$ADMIN_USERNAME")"
     ADMIN_PASSWORD="$(prompt_secret "管理员密码" "$ADMIN_PASSWORD")"
 
@@ -298,6 +300,7 @@ ensure_env() {
     chmod 600 "$env_file"
 
     set_env_value "$env_file" "PORT" "$PORT"
+    set_env_value "$env_file" "APP_TITLE" "$APP_TITLE"
     set_env_value "$env_file" "JWT_SECRET" "$jwt"
     set_env_value "$env_file" "ADMIN_USERNAME" "$ADMIN_USERNAME"
     set_env_value "$env_file" "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
