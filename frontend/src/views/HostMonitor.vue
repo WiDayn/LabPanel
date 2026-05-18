@@ -189,6 +189,7 @@
                     <th class="px-2 py-2 font-medium">PID</th>
                     <th class="px-2 py-2 font-medium">进程</th>
                     <th class="px-2 py-2 font-medium">用户</th>
+                    <th class="px-2 py-2 font-medium">分组</th>
                     <th class="px-2 py-2 font-medium">归属</th>
                     <th class="px-2 py-2 text-right font-medium">CPU</th>
                     <th class="px-2 py-2 text-right font-medium">内存</th>
@@ -199,6 +200,25 @@
                     <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
                     <td class="px-2 py-2 text-gray-900">{{ process.command || '-' }}</td>
                     <td class="px-2 py-2 text-gray-700">{{ process.user || '-' }}</td>
+                    <td class="px-2 py-2">
+                      <div class="flex flex-wrap gap-1">
+                        <span
+                          v-for="group in visibleGroups(process.groups)"
+                          :key="group.id"
+                          :class="groupBadgeClass(group)"
+                        >
+                          {{ group.name }}
+                        </span>
+                        <span
+                          v-if="hasMoreGroups(process.groups)"
+                          class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200"
+                          :title="process.groups.map((group) => group.name).join('、')"
+                        >
+                          ...
+                        </span>
+                        <span v-if="!process.groups?.length" class="text-xs text-gray-400">未分组</span>
+                      </div>
+                    </td>
                     <td class="px-2 py-2">
                       <span
                         class="rounded px-2 py-1 text-xs"
@@ -416,6 +436,28 @@ const toggleMemoryDetails = () => {
 
 const sectionToggleLabel = (section) => collapsedSections.value[section] ? '展开' : '收起'
 const sectionArrowClass = (section) => collapsedSections.value[section] ? '-rotate-90' : 'rotate-0'
+
+const groupColorClasses = {
+  blue: 'bg-blue-50 text-blue-700 ring-blue-200',
+  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  amber: 'bg-amber-50 text-amber-700 ring-amber-200',
+  violet: 'bg-violet-50 text-violet-700 ring-violet-200',
+  rose: 'bg-rose-50 text-rose-700 ring-rose-200',
+  cyan: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+  lime: 'bg-lime-50 text-lime-700 ring-lime-200',
+  orange: 'bg-orange-50 text-orange-700 ring-orange-200',
+  slate: 'bg-slate-100 text-slate-700 ring-slate-200',
+  indigo: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+}
+
+const visibleGroups = (items) => (Array.isArray(items) ? items.slice(0, 2) : [])
+
+const hasMoreGroups = (items) => Array.isArray(items) && items.length > 2
+
+const groupBadgeClass = (group) => [
+  'inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1',
+  groupColorClasses[group?.color] || groupColorClasses.slate,
+]
 
 const ownerLabel = (process) => {
   if (process.ownerType === 'container' && process.containerName) {

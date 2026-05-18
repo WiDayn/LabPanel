@@ -22,14 +22,15 @@ type HostMetricsPoint struct {
 }
 
 type HostProcess struct {
-	PID           int     `json:"pid"`
-	User          string  `json:"user"`
-	Command       string  `json:"command"`
-	CPUPercent    float64 `json:"cpuPercent"`
-	MemoryBytes   int64   `json:"memoryBytes"`
-	MemoryPercent float64 `json:"memoryPercent"`
-	OwnerType     string  `json:"ownerType"`
-	ContainerName string  `json:"containerName"`
+	PID           int        `json:"pid"`
+	User          string     `json:"user"`
+	Command       string     `json:"command"`
+	CPUPercent    float64    `json:"cpuPercent"`
+	MemoryBytes   int64      `json:"memoryBytes"`
+	MemoryPercent float64    `json:"memoryPercent"`
+	OwnerType     string     `json:"ownerType"`
+	ContainerName string     `json:"containerName"`
+	Groups        []LxcGroup `json:"groups"`
 }
 
 type HostMemoryModule struct {

@@ -783,6 +783,7 @@ func collectHostProcesses() []models.HostProcess {
 	}
 
 	processes := make([]models.HostProcess, 0, hostProcessLimit)
+	groupsByContainer, _ := NewLxcGroupService().GroupsByContainer()
 	for _, line := range nonEmptyLines(string(output)) {
 		fields := strings.Fields(line)
 		if len(fields) < 6 {
@@ -793,6 +794,10 @@ func collectHostProcesses() []models.HostProcess {
 			continue
 		}
 		ownerType, containerName := processOwner(pid)
+		groups := groupsByContainer[containerName]
+		if groups == nil {
+			groups = []models.LxcGroup{}
+		}
 		processes = append(processes, models.HostProcess{
 			PID:           pid,
 			User:          fields[1],
@@ -802,6 +807,7 @@ func collectHostProcesses() []models.HostProcess {
 			Command:       strings.Join(fields[5:], " "),
 			OwnerType:     ownerType,
 			ContainerName: containerName,
+			Groups:        groups,
 		})
 		if len(processes) >= hostProcessLimit {
 			break
