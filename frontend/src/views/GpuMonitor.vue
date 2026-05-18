@@ -4,13 +4,22 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
-        <Card class="p-4">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {{ error }}
+        </div>
+
+        <Card v-if="!status.available" class="p-6 border-amber-200 bg-amber-50">
+          <h2 class="text-base font-semibold text-amber-900">nvidia-smi 无显卡</h2>
+          <p class="mt-1 text-sm text-amber-800">{{ status.message || '当前宿主机未检测到可用 NVIDIA 显卡。' }}</p>
+        </Card>
+
+        <section v-else class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 class="text-base font-semibold">NVIDIA GPU</h2>
-              <div class="mt-1 text-sm text-gray-600">{{ formatTime(status.updatedAt) }}</div>
+              <h2 class="text-base font-semibold text-gray-900">nvidia-smi</h2>
+              <div class="mt-1 text-sm text-gray-600">刷新时间: {{ formatTime(status.updatedAt) }}</div>
             </div>
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
               <div class="flex rounded-md border border-gray-300 bg-white p-1">
                 <button
                   v-for="option in rangeOptions"
@@ -28,62 +37,57 @@
               </Button>
             </div>
           </div>
-        </Card>
 
-        <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {{ error }}
-        </div>
-
-        <Card v-if="!status.available" class="p-6 border-amber-200 bg-amber-50">
-          <h2 class="text-base font-semibold text-amber-900">nvidia-smi 无显卡</h2>
-          <p class="mt-1 text-sm text-amber-800">{{ status.message || '当前宿主机未检测到可用 NVIDIA 显卡。' }}</p>
-        </Card>
-
-        <div v-else class="space-y-6">
-          <div class="grid gap-4 xl:grid-cols-2">
-            <Card v-for="gpu in status.gpus" :key="gpu.uuid" class="p-4">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold text-gray-900">GPU {{ gpu.index }}</div>
-                  <div class="mt-1 truncate text-sm text-gray-700" :title="gpu.name">{{ gpu.name }}</div>
-                  <div class="mt-1 truncate text-xs text-gray-500" :title="gpu.uuid">{{ gpu.uuid }}</div>
-                </div>
-                <span class="rounded bg-green-100 px-2 py-1 text-xs text-green-700">
-                  {{ gpu.processes?.length || 0 }} 进程
-                </span>
-              </div>
-
-              <div class="mt-4 space-y-3">
-                <div>
-                  <div class="flex justify-between text-xs text-gray-600">
-                    <span>显存</span>
-                    <span>{{ gpu.memoryUsedMiB }} / {{ gpu.memoryTotalMiB }} MiB</span>
+          <div class="border-t border-gray-200 p-4">
+            <div class="grid gap-4 xl:grid-cols-2">
+              <div
+                v-for="gpu in status.gpus"
+                :key="gpu.uuid"
+                class="rounded-md border border-gray-200 bg-white p-4 shadow-sm"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-gray-900">GPU {{ gpu.index }}</div>
+                    <div class="mt-1 truncate text-sm text-gray-700" :title="gpu.name">{{ gpu.name }}</div>
+                    <div class="mt-1 truncate text-xs text-gray-500" :title="gpu.uuid">{{ gpu.uuid }}</div>
                   </div>
-                  <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
-                    <div class="h-full rounded-full bg-blue-600" :style="{ width: `${memoryPercent(gpu)}%` }" />
-                  </div>
+                  <span class="rounded bg-green-100 px-2 py-1 text-xs text-green-700">
+                    {{ gpu.processes?.length || 0 }} 进程
+                  </span>
                 </div>
-                <div class="grid grid-cols-2 gap-3 text-xs text-gray-600">
+
+                <div class="mt-4 space-y-3">
                   <div>
-                    <div class="font-medium text-gray-900">{{ gpu.utilization }}%</div>
-                    <div>GPU 利用率</div>
+                    <div class="flex justify-between text-xs text-gray-600">
+                      <span>显存</span>
+                      <span>{{ gpu.memoryUsedMiB }} / {{ gpu.memoryTotalMiB }} MiB</span>
+                    </div>
+                    <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                      <div class="h-full rounded-full bg-blue-600" :style="{ width: `${memoryPercent(gpu)}%` }" />
+                    </div>
                   </div>
-                  <div>
-                    <div class="font-medium text-gray-900">{{ gpu.temperature }}°C</div>
-                    <div>温度</div>
+                  <div class="grid grid-cols-2 gap-3 text-xs text-gray-600">
+                    <div>
+                      <div class="font-medium text-gray-900">{{ gpu.utilization }}%</div>
+                      <div>GPU 利用率</div>
+                    </div>
+                    <div>
+                      <div class="font-medium text-gray-900">{{ gpu.temperature }}°C</div>
+                      <div>温度</div>
+                    </div>
                   </div>
+                  <GpuMemoryChart
+                    :series="gpu.memorySeries || []"
+                    :total-memory="gpu.memoryTotalMiB"
+                  />
                 </div>
-                <GpuMemoryChart
-                  :series="gpu.memorySeries || []"
-                  :total-memory="gpu.memoryTotalMiB"
-                />
               </div>
-            </Card>
+            </div>
           </div>
 
-          <Card class="p-4">
+          <div class="border-t border-gray-200 p-4">
             <div class="flex items-center justify-between">
-              <h2 class="text-base font-semibold">显卡进程</h2>
+              <h2 class="text-base font-semibold text-gray-900">显卡进程</h2>
               <span class="text-xs text-gray-500">{{ allProcesses.length }} 个</span>
             </div>
 
@@ -119,8 +123,8 @@
             <div v-else class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
               当前没有进程占用 NVIDIA 显卡。
             </div>
-          </Card>
-        </div>
+          </div>
+        </section>
       </div>
     </main>
   </div>
