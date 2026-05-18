@@ -622,7 +622,8 @@ func readMemoryModulesFromDMI() []models.HostMemoryModule {
 				speed = cleanDMIValue(current["Speed"])
 			}
 			modules = append(modules, models.HostMemoryModule{
-				Locator:      firstNonEmptyDMIValue(current["Locator"], current["Bank Locator"]),
+				Locator:      cleanDMIValue(current["Locator"]),
+				BankLocator:  cleanDMIValue(current["Bank Locator"]),
 				SizeBytes:    sizeBytes,
 				Manufacturer: cleanDMIValue(current["Manufacturer"]),
 				PartNumber:   cleanDMIValue(current["Part Number"]),
