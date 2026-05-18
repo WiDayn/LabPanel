@@ -92,7 +92,6 @@ main() {
 
     log "停止 services..."
     systemctl stop "$APP_SERVICE" 2>/dev/null || true
-    systemctl stop "$FRP_SERVICE" 2>/dev/null || true
 
     log "拉取最新代码..."
     git_cmd pull --ff-only
@@ -103,7 +102,6 @@ main() {
     systemctl daemon-reload
     if [ "$START_SERVICES" = "1" ]; then
         log "启动 services..."
-        systemctl start "$FRP_SERVICE" 2>/dev/null || log "${FRP_SERVICE} 启动失败，请检查 FRP 配置"
         systemctl start "$APP_SERVICE"
     else
         log "START_SERVICES=0，已跳过启动 services"
