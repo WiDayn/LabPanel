@@ -1,12 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <header class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-semibold">系统文档</h1>
-        <Button variant="outline" @click="handleLogout">退出登录</Button>
-      </div>
-      <Navigation />
-    </header>
+    <AppHeader />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="flex gap-6">
@@ -116,15 +110,13 @@
 
 <script setup>
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
-import Navigation from '@/components/Navigation.vue'
+import AppHeader from '@/components/AppHeader.vue'
 
-const router = useRouter()
 const documents = ref([])
 const selectedDocId = ref(null)
 const selectedDocument = ref(null)
@@ -396,11 +388,6 @@ const closeCreateDialog = () => {
   newDoc.value = { title: '' }
 }
 
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  router.push('/login')
-}
-
 onMounted(() => {
   loadDocuments()
 })
@@ -493,4 +480,3 @@ onMounted(() => {
   @apply text-blue-600 hover:underline;
 }
 </style>
-
