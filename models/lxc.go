@@ -9,13 +9,14 @@ const (
 )
 
 type LxcContainer struct {
-	Name     string `json:"name"`
-	State    string `json:"state"`
-	IPV4     string `json:"ipv4"`
-	IPV6     string `json:"ipv6"`
-	Type     string `json:"type"`
-	Arch     string `json:"arch"`
-	Profiles string `json:"profiles"`
+	Name     string     `json:"name"`
+	State    string     `json:"state"`
+	IPV4     string     `json:"ipv4"`
+	IPV6     string     `json:"ipv6"`
+	Type     string     `json:"type"`
+	Arch     string     `json:"arch"`
+	Profiles string     `json:"profiles"`
+	Groups   []LxcGroup `json:"groups"`
 }
 
 type LxcListResponse struct {
@@ -23,11 +24,37 @@ type LxcListResponse struct {
 }
 
 type CreateLxcRequest struct {
-	Name       string `json:"name" binding:"required"`
-	Password   string `json:"password" binding:"required"`
-	SourceType string `json:"sourceType"`
-	Image      string `json:"image"`
-	BackupFile string `json:"backupFile"`
+	Name       string   `json:"name" binding:"required"`
+	Password   string   `json:"password" binding:"required"`
+	SourceType string   `json:"sourceType"`
+	Image      string   `json:"image"`
+	BackupFile string   `json:"backupFile"`
+	GroupIDs   []string `json:"groupIds"`
+}
+
+type LxcGroup struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type LxcGroupsResponse struct {
+	Groups          []LxcGroup          `json:"groups"`
+	ContainerGroups map[string][]string `json:"containerGroups"`
+}
+
+type CreateLxcGroupRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type LxcGroupResponse struct {
+	Group LxcGroup `json:"group"`
+}
+
+type UpdateLxcContainerGroupsRequest struct {
+	ContainerName string   `json:"containerName" binding:"required"`
+	GroupIDs      []string `json:"groupIds"`
 }
 
 type DeleteLxcRequest struct {

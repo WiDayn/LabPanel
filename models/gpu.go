@@ -3,12 +3,14 @@ package models
 import "time"
 
 type GPUProcess struct {
-	GPUUUID       string `json:"gpuUuid"`
-	PID           int    `json:"pid"`
-	ProcessName   string `json:"processName"`
-	UsedMemoryMiB int64  `json:"usedMemoryMiB"`
-	OwnerType     string `json:"ownerType"`
-	ContainerName string `json:"containerName"`
+	GPUUUID       string     `json:"gpuUuid"`
+	PID           int        `json:"pid"`
+	User          string     `json:"user"`
+	ProcessName   string     `json:"processName"`
+	UsedMemoryMiB int64      `json:"usedMemoryMiB"`
+	OwnerType     string     `json:"ownerType"`
+	ContainerName string     `json:"containerName"`
+	Groups        []LxcGroup `json:"groups"`
 }
 
 type GPUDevice struct {
