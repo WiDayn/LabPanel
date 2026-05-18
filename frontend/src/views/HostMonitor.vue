@@ -451,16 +451,16 @@ const groupColorClasses = {
 }
 
 const ownerColorClasses = {
-  blue: 'bg-blue-100 text-blue-800 ring-blue-200',
-  emerald: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-  amber: 'bg-amber-100 text-amber-800 ring-amber-200',
-  violet: 'bg-violet-100 text-violet-800 ring-violet-200',
-  rose: 'bg-rose-100 text-rose-800 ring-rose-200',
-  cyan: 'bg-cyan-100 text-cyan-800 ring-cyan-200',
-  lime: 'bg-lime-100 text-lime-800 ring-lime-200',
-  orange: 'bg-orange-100 text-orange-800 ring-orange-200',
+  blue: 'bg-cyan-100 text-cyan-800 ring-cyan-300',
+  emerald: 'bg-teal-100 text-teal-800 ring-teal-300',
+  amber: 'bg-orange-100 text-orange-800 ring-orange-300',
+  violet: 'bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-300',
+  rose: 'bg-pink-100 text-pink-800 ring-pink-300',
+  cyan: 'bg-sky-100 text-sky-800 ring-sky-300',
+  lime: 'bg-green-100 text-green-800 ring-green-300',
+  orange: 'bg-amber-100 text-amber-800 ring-amber-300',
   slate: 'bg-slate-200 text-slate-800 ring-slate-300',
-  indigo: 'bg-indigo-100 text-indigo-800 ring-indigo-200',
+  indigo: 'bg-violet-100 text-violet-800 ring-violet-300',
 }
 
 const visibleGroups = (items) => (Array.isArray(items) ? items.slice(0, 2) : [])

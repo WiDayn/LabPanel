@@ -664,10 +664,16 @@ func min(a, b int) int {
 
 func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
 	name := strings.TrimSpace(req.Name)
-	password := req.Password
+	password := strings.TrimSpace(req.Password)
 	sourceType := strings.TrimSpace(req.SourceType)
 	if sourceType == "" {
 		sourceType = models.LxcCreateSourceDefaultImage
+	}
+	if name == "" {
+		return fmt.Errorf("容器名称不能为空")
+	}
+	if password == "" {
+		return fmt.Errorf("Root 密码不能为空")
 	}
 	groupService := NewLxcGroupService()
 	if err := groupService.ValidateGroupIDs(req.GroupIDs); err != nil {
@@ -1311,39 +1317,8 @@ func (s *LxcService) configureSSH(name, password string) error {
 		return fmt.Errorf("容器无法执行命令，可能未运行: %v", err)
 	}
 
-	// 设置root密码 - 使用passwd命令，通过标准输入传递两次密码
-	// passwd命令需要输入两次密码进行确认
-	cmd = exec.Command("lxc", "exec", name, "--", "passwd", "root")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("创建stdin管道失败: %v", err)
-	}
-
-	// 设置输出管道
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// 启动命令
-	if err := cmd.Start(); err != nil {
-		stdin.Close()
-		return fmt.Errorf("启动命令失败: %v", err)
-	}
-
-	// 写入两次密码（passwd需要输入两次进行确认）
-	passwordInput := fmt.Sprintf("%s\n%s\n", password, password)
-	_, err = stdin.Write([]byte(passwordInput))
-	if err != nil {
-		stdin.Close()
-		cmd.Wait()
-		return fmt.Errorf("写入密码失败: %v", err)
-	}
-	stdin.Close()
-
-	// 等待命令完成
-	if err := cmd.Wait(); err != nil {
-		output := stdout.String() + stderr.String()
-		return fmt.Errorf("设置root密码失败: %v, 输出: %s", err, output)
+	if err := s.setRootPassword(name, password); err != nil {
+		return err
 	}
 
 	// 启动SSH服务（如果还没启动）
@@ -1376,15 +1351,16 @@ systemctl restart ssh || service ssh restart || /etc/init.d/ssh restart`
 	return nil
 }
 
-// ChangePassword 修改容器的root密码
-func (s *LxcService) ChangePassword(name, password string) error {
-	// 确保容器正在运行
-	if err := s.waitForContainerRunning(name, 30); err != nil {
-		return fmt.Errorf("容器未运行或无法访问: %v", err)
+func (s *LxcService) setRootPassword(name, password string) error {
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return fmt.Errorf("Root 密码不能为空")
+	}
+	if strings.ContainsAny(password, "\r\n") {
+		return fmt.Errorf("Root 密码不能包含换行符")
 	}
 
-	// 设置root密码 - 使用passwd命令，通过标准输入传递两次密码
-	cmd := exec.Command("lxc", "exec", name, "--", "passwd", "root")
+	cmd := exec.Command("lxc", "exec", name, "--", "chpasswd")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("创建stdin管道失败: %v", err)
@@ -1401,9 +1377,7 @@ func (s *LxcService) ChangePassword(name, password string) error {
 		return fmt.Errorf("启动命令失败: %v", err)
 	}
 
-	// 写入两次密码（passwd需要输入两次进行确认）
-	passwordInput := fmt.Sprintf("%s\n%s\n", password, password)
-	_, err = stdin.Write([]byte(passwordInput))
+	_, err = stdin.Write([]byte(fmt.Sprintf("root:%s\n", password)))
 	if err != nil {
 		stdin.Close()
 		cmd.Wait()
@@ -1414,8 +1388,18 @@ func (s *LxcService) ChangePassword(name, password string) error {
 	// 等待命令完成
 	if err := cmd.Wait(); err != nil {
 		output := stdout.String() + stderr.String()
-		return fmt.Errorf("修改root密码失败: %v, 输出: %s", err, output)
+		return fmt.Errorf("设置root密码失败: %v, 输出: %s", err, output)
 	}
 
 	return nil
+}
+
+// ChangePassword 修改容器的root密码
+func (s *LxcService) ChangePassword(name, password string) error {
+	// 确保容器正在运行
+	if err := s.waitForContainerRunning(name, 30); err != nil {
+		return fmt.Errorf("容器未运行或无法访问: %v", err)
+	}
+
+	return s.setRootPassword(name, password)
 }
