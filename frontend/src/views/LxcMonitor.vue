@@ -4,38 +4,6 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="space-y-6">
-        <Card class="p-4">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <select
-                v-model="selectedName"
-                class="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm"
-                @change="loadMetrics"
-              >
-                <option value="">自动选择容器</option>
-                <option v-for="container in containers" :key="container.name" :value="container.name">
-                  {{ container.name }}
-                </option>
-              </select>
-              <div class="flex rounded-md border border-gray-300 bg-white p-1">
-                <button
-                  v-for="option in rangeOptions"
-                  :key="option.value"
-                  type="button"
-                  class="h-7 min-w-12 rounded px-3 text-xs font-medium transition-colors"
-                  :class="rangeKey === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                  @click="setRange(option.value)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
-              <Button variant="outline" size="sm" @click="loadMetrics" :disabled="loading">
-                {{ loading ? '刷新中...' : '刷新' }}
-              </Button>
-            </div>
-          </div>
-        </Card>
-
         <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {{ error }}
         </div>
@@ -83,13 +51,32 @@
           </Card>
 
           <div class="space-y-6">
-            <Card class="p-4">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 class="text-base font-semibold">{{ currentName || '未选择容器' }}</h2>
-                  <p class="mt-1 text-sm text-gray-600">{{ currentRangeLabel }} · {{ metrics.intervalSeconds || 60 }}s</p>
+                  <p class="mt-1 text-sm text-gray-600">刷新时间: {{ formatTime(currentSummary?.updatedAt) }}</p>
                 </div>
-                <div v-if="currentSummary" class="grid grid-cols-2 gap-3 text-right text-xs text-gray-600 sm:grid-cols-5">
+                <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
+                  <div class="flex rounded-md border border-gray-300 bg-white p-1">
+                    <button
+                      v-for="option in rangeOptions"
+                      :key="option.value"
+                      type="button"
+                      class="h-7 min-w-12 rounded px-3 text-xs font-medium transition-colors"
+                      :class="rangeKey === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                      @click="setRange(option.value)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                  <Button variant="outline" size="sm" @click="loadMetrics" :disabled="loading">
+                    {{ loading ? '刷新中...' : '刷新' }}
+                  </Button>
+                </div>
+              </div>
+              <div v-if="currentSummary" class="border-t border-gray-200 px-5 py-4">
+                <div class="grid grid-cols-2 gap-3 text-xs text-gray-600 md:grid-cols-4">
                   <div>
                     <div class="font-medium text-gray-900">{{ formatPercent(currentSummary.cpuPercent) }}</div>
                     <div>CPU</div>
@@ -106,65 +93,67 @@
                     <div class="font-medium text-gray-900">{{ currentSummary.processes || 0 }}</div>
                     <div>进程</div>
                   </div>
-                  <div>
-                    <div class="font-medium text-gray-900">{{ formatTime(currentSummary.updatedAt) }}</div>
-                    <div>更新时间</div>
-                  </div>
                 </div>
               </div>
-            </Card>
 
-            <div class="grid gap-6 xl:grid-cols-2">
-              <MetricChart
-                title="CPU 使用率"
-                color="#2563eb"
-                :points="seriesPoints"
-                value-key="cpuPercent"
-                :format-value="formatPercent"
-              />
-              <MetricChart
-                title="内存使用"
-                color="#16a34a"
-                :points="seriesPoints"
-                value-key="memoryBytes"
-                :format-value="formatBytes"
-              />
-              <MetricChart
-                title="磁盘占用"
-                color="#ca8a04"
-                :points="seriesPoints"
-                value-key="diskUsageBytes"
-                :format-value="formatBytes"
-              />
-              <MetricChart
-                title="网络下行"
-                color="#0891b2"
-                :points="seriesPoints"
-                value-key="networkRxBps"
-                :format-value="formatRate"
-              />
-              <MetricChart
-                title="网络上行"
-                color="#7c3aed"
-                :points="seriesPoints"
-                value-key="networkTxBps"
-                :format-value="formatRate"
-              />
-              <MetricChart
-                title="磁盘读取"
-                color="#ea580c"
-                :points="seriesPoints"
-                value-key="diskReadBps"
-                :format-value="formatRate"
-              />
-              <MetricChart
-                title="磁盘写入"
-                color="#dc2626"
-                :points="seriesPoints"
-                value-key="diskWriteBps"
-                :format-value="formatRate"
-              />
-            </div>
+              <div class="border-t border-gray-200 p-4">
+                <div>
+                  <h2 class="text-base font-semibold text-gray-900">指标图表</h2>
+                  <div class="mt-1 text-xs text-gray-500">{{ seriesPoints.length }} 个采样点</div>
+                </div>
+                <div class="mt-4 grid gap-4 xl:grid-cols-2">
+                  <MetricChart
+                    title="CPU 使用率"
+                    color="#2563eb"
+                    :points="seriesPoints"
+                    value-key="cpuPercent"
+                    :format-value="formatPercent"
+                  />
+                  <MetricChart
+                    title="内存使用"
+                    color="#16a34a"
+                    :points="seriesPoints"
+                    value-key="memoryBytes"
+                    :format-value="formatBytes"
+                  />
+                  <MetricChart
+                    title="磁盘占用"
+                    color="#ca8a04"
+                    :points="seriesPoints"
+                    value-key="diskUsageBytes"
+                    :format-value="formatBytes"
+                  />
+                  <MetricChart
+                    title="网络下行"
+                    color="#0891b2"
+                    :points="seriesPoints"
+                    value-key="networkRxBps"
+                    :format-value="formatRate"
+                  />
+                  <MetricChart
+                    title="网络上行"
+                    color="#7c3aed"
+                    :points="seriesPoints"
+                    value-key="networkTxBps"
+                    :format-value="formatRate"
+                  />
+                  <MetricChart
+                    title="磁盘读取"
+                    color="#ea580c"
+                    :points="seriesPoints"
+                    value-key="diskReadBps"
+                    :format-value="formatRate"
+                  />
+                  <MetricChart
+                    title="磁盘写入"
+                    color="#dc2626"
+                    :points="seriesPoints"
+                    value-key="diskWriteBps"
+                    :format-value="formatRate"
+                  />
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </div>
@@ -297,7 +286,6 @@ const containers = computed(() => metrics.value.containers || [])
 const currentName = computed(() => metrics.value.selected?.name || selectedName.value || containers.value[0]?.name || '')
 const seriesPoints = computed(() => metrics.value.selected?.points || [])
 const currentSummary = computed(() => containers.value.find((container) => container.name === currentName.value))
-const currentRangeLabel = computed(() => rangeOptions.find((option) => option.value === rangeKey.value)?.label || rangeKey.value)
 
 const loadMetrics = async () => {
   loading.value = true
