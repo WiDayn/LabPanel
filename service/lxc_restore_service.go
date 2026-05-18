@@ -31,9 +31,17 @@ func (m *LxcRestoreManager) StartRestore(req models.CreateLxcRequest) (*models.L
 	if name == "" {
 		return nil, fmt.Errorf("容器名称不能为空")
 	}
-	if strings.TrimSpace(req.BackupFile) == "" {
+	password := strings.TrimSpace(req.Password)
+	if password == "" {
+		return nil, fmt.Errorf("Root 密码不能为空")
+	}
+	backupFile := strings.TrimSpace(req.BackupFile)
+	if backupFile == "" {
 		return nil, fmt.Errorf("请选择备份文件")
 	}
+	req.Name = name
+	req.Password = password
+	req.BackupFile = backupFile
 
 	m.mu.Lock()
 	if existing, ok := m.restores[name]; ok && (existing.Status == models.LxcBackupStatusQueued || existing.Status == models.LxcBackupStatusRunning) {
@@ -50,7 +58,7 @@ func (m *LxcRestoreManager) StartRestore(req models.CreateLxcRequest) (*models.L
 		Stage:      "queued",
 		Progress:   5,
 		Message:    "恢复任务已创建，等待后台导入",
-		BackupFile: strings.TrimSpace(req.BackupFile),
+		BackupFile: backupFile,
 		StartedAt:  now,
 		UpdatedAt:  now,
 	}
