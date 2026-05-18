@@ -82,6 +82,9 @@ func main() {
 
 			// LXC容器管理
 			auth.GET("/lxc/list", handlers.GetLxcList)
+			auth.GET("/lxc/groups", handlers.GetLxcGroups)
+			auth.POST("/lxc/groups", handlers.CreateLxcGroup)
+			auth.PUT("/lxc/groups/container", handlers.UpdateLxcContainerGroups)
 			auth.POST("/lxc/create", handlers.CreateLxcContainer)
 			auth.DELETE("/lxc/delete", handlers.DeleteLxcContainer)
 			auth.POST("/lxc/restart", handlers.RestartLxcContainer)

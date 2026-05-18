@@ -231,19 +231,40 @@
               暂无容器
             </div>
             <div v-else class="overflow-x-auto">
-              <table class="w-full table-fixed border-collapse text-sm">
+              <table class="w-full min-w-[920px] table-fixed border-collapse text-sm">
               <thead>
                 <tr class="border-b text-left text-xs text-gray-500">
                   <th class="w-48 px-2 py-2 font-medium">名称</th>
+                  <th class="w-36 px-2 py-2 font-medium">分组</th>
                   <th class="w-24 px-2 py-2 font-medium">状态</th>
                   <th class="w-36 px-2 py-2 font-medium">IPv4</th>
-                  <th class="w-48 px-2 py-2 font-medium">IPv6</th>
-                  <th class="px-2 py-2 font-medium">操作</th>
+                  <th class="px-2 py-2 font-medium">IPv6</th>
+                  <th class="w-44 px-2 py-2 text-right font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(container, index) in containers" :key="index" class="border-b last:border-b-0">
                   <td class="truncate px-2 py-2 font-medium text-gray-900" :title="container.name">{{ container.name }}</td>
+                  <td class="px-2 py-2">
+                    <div class="flex max-w-full flex-wrap items-center gap-1">
+                      <span
+                        v-for="group in visibleGroups(container.groups)"
+                        :key="group.id"
+                        :class="groupBadgeClass(group)"
+                        :title="group.name"
+                      >
+                        {{ group.name }}
+                      </span>
+                      <span
+                        v-if="hasMoreGroups(container.groups)"
+                        class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200"
+                        :title="container.groups.map((group) => group.name).join('、')"
+                      >
+                        ...
+                      </span>
+                      <span v-if="!container.groups?.length" class="text-xs text-gray-400">未分组</span>
+                    </div>
+                  </td>
                   <td class="px-2 py-2">
                     <span
                       :class="[
@@ -260,8 +281,8 @@
                       {{ container.ipv6 || '-' }}
                     </div>
                   </td>
-                  <td class="px-2 py-2">
-                    <div class="flex gap-2 flex-nowrap whitespace-nowrap">
+                  <td class="w-44 px-2 py-2">
+                    <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                       <Button 
                         v-if="container.state !== 'Running'" 
                         variant="outline" 
@@ -278,26 +299,15 @@
                       >
                         关机
                       </Button>
-                      <Button 
-                        v-if="container.state === 'Running'" 
-                        variant="outline" 
-                        size="sm" 
-                        @click="forceStopContainer(container.name)"
-                      >
-                        强制关机
-                      </Button>
                       <Button variant="outline" size="sm" @click="showConfig(container.name)">配置</Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        :disabled="isBackupRunning(container.name)"
-                        @click="backupContainer(container.name)"
+                      <button
+                        type="button"
+                        class="inline-flex h-9 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        :aria-expanded="openActionMenu === container.name"
+                        @click.stop="toggleActionMenu(container, $event)"
                       >
-                        {{ isBackupRunning(container.name) ? '备份中...' : '备份' }}
-                      </Button>
-                      <Button variant="outline" size="sm" @click="changePassword(container.name)">修改密码</Button>
-                      <Button variant="outline" size="sm" @click="restartContainer(container.name)">重启</Button>
-                      <Button variant="destructive" size="sm" @click="deleteContainer(container.name)">删除</Button>
+                        更多
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -308,6 +318,60 @@
         </section>
       </div>
     </main>
+
+    <Teleport to="body">
+      <div
+        v-if="activeActionContainer"
+        class="fixed z-[100] w-40 overflow-hidden rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg"
+        :style="actionMenuStyle"
+        @click.stop
+      >
+        <button
+          v-if="activeActionContainer.state === 'Running'"
+          type="button"
+          class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50"
+          @click="runMenuAction(activeActionContainer, (container) => forceStopContainer(container.name))"
+        >
+          强制关机
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-white"
+          :disabled="isBackupRunning(activeActionContainer.name)"
+          @click="runMenuAction(activeActionContainer, (container) => backupContainer(container.name))"
+        >
+          {{ isBackupRunning(activeActionContainer.name) ? '备份中...' : '备份' }}
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50"
+          @click="runMenuAction(activeActionContainer, (container) => openAssignGroupDialog(container))"
+        >
+          分配分组
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50"
+          @click="runMenuAction(activeActionContainer, (container) => changePassword(container.name))"
+        >
+          修改密码
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50"
+          @click="runMenuAction(activeActionContainer, (container) => restartContainer(container.name))"
+        >
+          重启
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left text-red-600 hover:bg-red-50"
+          @click="runMenuAction(activeActionContainer, (container) => deleteContainer(container.name))"
+        >
+          删除
+        </button>
+      </div>
+    </Teleport>
 
     <!-- 新增容器对话框 -->
     <div
@@ -332,6 +396,52 @@
           <div>
             <label class="block text-sm font-medium mb-2">容器名称</label>
             <Input v-model="newContainer.name" placeholder="请输入容器名称" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-2">分组</label>
+            <div v-if="groups.length" class="-mx-1 mb-2 overflow-x-auto px-1 py-1.5">
+              <div class="flex w-max gap-2">
+                <button
+                  v-for="group in groups"
+                  :key="group.id"
+                  type="button"
+                  :class="groupOptionClass(group, isGroupSelected(newContainer, group.id))"
+                  :aria-pressed="isGroupSelected(newContainer, group.id)"
+                  @click="toggleGroupForForm(newContainer, group.id)"
+                >
+                  {{ group.name }}
+                </button>
+              </div>
+            </div>
+            <div
+              class="flex min-h-[46px] w-full flex-wrap items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+            >
+              <span
+                v-for="group in selectedGroupsForForm(newContainer)"
+                :key="group.id"
+                :class="[groupBadgeClass(group), 'gap-1']"
+              >
+                {{ group.name }}
+                <button
+                  type="button"
+                  class="ml-1 text-current opacity-60 hover:opacity-100"
+                  :aria-label="`移除 ${group.name}`"
+                  @click="removeGroupFromForm(newContainer, group.id)"
+                >
+                  ×
+                </button>
+              </span>
+              <input
+                v-model="newContainer.groupInput"
+                type="text"
+                class="min-w-[8rem] flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-gray-400"
+                :placeholder="selectedGroupsForForm(newContainer).length ? '' : '分组名称'"
+                @keydown.enter="commitGroupInput(newContainer, $event)"
+                @keydown.space="commitGroupInput(newContainer, $event)"
+                @keydown.backspace="removeLastGroupOnBackspace(newContainer, $event)"
+                @paste="handleGroupInputPaste(newContainer, $event)"
+              />
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium mb-2">创建来源</label>
@@ -490,6 +600,75 @@
         </div>
       </Card>
     </div>
+
+    <!-- 分配分组对话框 -->
+    <div
+      v-if="showGroupDialog"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="closeGroupDialog"
+    >
+      <Card class="w-full max-w-md p-6 m-4">
+        <h3 class="text-lg font-semibold mb-4">分配分组</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-2">容器名称</label>
+            <Input :value="groupTargetContainer?.name || ''" disabled />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-2">分组</label>
+            <div v-if="groups.length" class="-mx-1 mb-2 overflow-x-auto px-1 py-1.5">
+              <div class="flex w-max gap-2">
+                <button
+                  v-for="group in groups"
+                  :key="group.id"
+                  type="button"
+                  :class="groupOptionClass(group, isGroupSelected(groupForm, group.id))"
+                  :aria-pressed="isGroupSelected(groupForm, group.id)"
+                  @click="toggleGroupForForm(groupForm, group.id)"
+                >
+                  {{ group.name }}
+                </button>
+              </div>
+            </div>
+            <div
+              class="flex min-h-[46px] w-full flex-wrap items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+            >
+              <span
+                v-for="group in selectedGroupsForForm(groupForm)"
+                :key="group.id"
+                :class="[groupBadgeClass(group), 'gap-1']"
+              >
+                {{ group.name }}
+                <button
+                  type="button"
+                  class="ml-1 text-current opacity-60 hover:opacity-100"
+                  :aria-label="`移除 ${group.name}`"
+                  @click="removeGroupFromForm(groupForm, group.id)"
+                >
+                  ×
+                </button>
+              </span>
+              <input
+                v-model="groupForm.groupInput"
+                type="text"
+                class="min-w-[8rem] flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-gray-400"
+                :placeholder="selectedGroupsForForm(groupForm).length ? '' : '分组名称'"
+                @keydown.enter="commitGroupInput(groupForm, $event)"
+                @keydown.space="commitGroupInput(groupForm, $event)"
+                @keydown.backspace="removeLastGroupOnBackspace(groupForm, $event)"
+                @paste="handleGroupInputPaste(groupForm, $event)"
+              />
+            </div>
+          </div>
+          <div class="flex gap-2 justify-end">
+            <Button variant="outline" @click="closeGroupDialog" :disabled="savingGroups">取消</Button>
+            <Button @click="saveContainerGroups" :disabled="savingGroups">
+              {{ savingGroups ? '保存中...' : '保存' }}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
   </div>
 </template>
 
@@ -514,11 +693,19 @@ const deletingBackupArchive = ref('')
 const backupStatuses = ref({})
 const restoreStatuses = ref({})
 const backupArchives = ref([])
+const groups = ref([])
 const error = ref('')
 const success = ref('')
+const openActionMenu = ref('')
+const actionMenuPosition = ref({ top: 0, left: 0 })
 const showCreateDialog = ref(false)
 const showPasswordDialog = ref(false)
 const changingPassword = ref(false)
+const showGroupDialog = ref(false)
+const creatingGroup = ref(false)
+const savingGroups = ref(false)
+const groupTargetContainer = ref(null)
+const groupForm = ref({ groupIds: [], groupInput: '' })
 const showConfigDialog = ref(false)
 const configContainer = ref({ name: '' })
 const configContent = ref('')
@@ -540,6 +727,8 @@ const newContainer = ref({
   sourceType: 'default_image',
   image: '',
   backupFile: '',
+  groupIds: [],
+  groupInput: '',
 })
 const passwordContainer = ref({
   name: '',
@@ -565,6 +754,260 @@ const hasRunningRestores = computed(() =>
     (restore) => restore?.status === 'queued' || restore?.status === 'running'
   )
 )
+
+const groupColorClasses = {
+  blue: 'bg-blue-50 text-blue-700 ring-blue-200',
+  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  amber: 'bg-amber-50 text-amber-700 ring-amber-200',
+  violet: 'bg-violet-50 text-violet-700 ring-violet-200',
+  rose: 'bg-rose-50 text-rose-700 ring-rose-200',
+  cyan: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+  lime: 'bg-lime-50 text-lime-700 ring-lime-200',
+  orange: 'bg-orange-50 text-orange-700 ring-orange-200',
+  slate: 'bg-slate-100 text-slate-700 ring-slate-200',
+  indigo: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+}
+
+const visibleGroups = (items) => (Array.isArray(items) ? items.slice(0, 2) : [])
+
+const hasMoreGroups = (items) => Array.isArray(items) && items.length > 2
+
+const groupBadgeClass = (group) => [
+  'inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1',
+  groupColorClasses[group?.color] || groupColorClasses.slate,
+]
+
+const groupOptionClass = (group, selected) => [
+  ...groupBadgeClass(group),
+  'border-0 transition hover:opacity-100',
+  selected ? 'opacity-100 font-semibold' : 'opacity-80',
+]
+
+const selectedGroupsForForm = (form) => {
+  const selected = new Set(Array.isArray(form?.groupIds) ? form.groupIds : [])
+  return groups.value.filter((group) => selected.has(group.id))
+}
+
+const isGroupSelected = (form, groupId) => Array.isArray(form?.groupIds) && form.groupIds.includes(groupId)
+
+const setFormGroupIds = (form, groupIds) => {
+  const unique = []
+  const seen = new Set()
+  for (const groupId of Array.isArray(groupIds) ? groupIds : []) {
+    if (!groupId || seen.has(groupId)) {
+      continue
+    }
+    seen.add(groupId)
+    unique.push(groupId)
+  }
+  form.groupIds = unique
+}
+
+const toggleGroupForForm = (form, groupId) => {
+  if (!groupId) {
+    return
+  }
+  if (isGroupSelected(form, groupId)) {
+    setFormGroupIds(form, form.groupIds.filter((id) => id !== groupId))
+    return
+  }
+  setFormGroupIds(form, [...(form.groupIds || []), groupId])
+}
+
+const removeGroupFromForm = (form, groupId) => {
+  setFormGroupIds(form, (form.groupIds || []).filter((id) => id !== groupId))
+}
+
+const removeLastGroupOnBackspace = (form, event) => {
+  if (String(form.groupInput || '').length > 0) {
+    return
+  }
+  if (!Array.isArray(form.groupIds) || form.groupIds.length === 0) {
+    return
+  }
+  event.preventDefault()
+  setFormGroupIds(form, form.groupIds.slice(0, -1))
+}
+
+const activeActionContainer = computed(() =>
+  containers.value.find((container) => container.name === openActionMenu.value)
+)
+
+const actionMenuStyle = computed(() => ({
+  top: `${actionMenuPosition.value.top}px`,
+  left: `${actionMenuPosition.value.left}px`,
+}))
+
+const closeActionMenu = () => {
+  openActionMenu.value = ''
+}
+
+const toggleActionMenu = (container, event) => {
+  event?.stopPropagation?.()
+
+  if (openActionMenu.value === container.name) {
+    closeActionMenu()
+    return
+  }
+
+  const menuWidth = 160
+  const margin = 8
+  const trigger = event?.currentTarget || event?.target?.closest?.('button')
+  const rect = trigger?.getBoundingClientRect?.()
+
+  if (rect) {
+    const menuHeight = container.state === 'Running' ? 224 : 188
+    const preferredLeft = rect.right + margin
+    const fallbackLeft = rect.left - menuWidth - margin
+    const preferredTop = rect.top
+    const maxTop = window.innerHeight - menuHeight - margin
+    actionMenuPosition.value = {
+      top: Math.max(margin, Math.min(preferredTop, maxTop)),
+      left: preferredLeft + menuWidth <= window.innerWidth - margin
+        ? preferredLeft
+        : Math.max(margin, fallbackLeft),
+    }
+  }
+
+  openActionMenu.value = container.name
+}
+
+const runMenuAction = (container, action) => {
+  if (!container || typeof action !== 'function') {
+    closeActionMenu()
+    return
+  }
+
+  closeActionMenu()
+  action(container)
+}
+
+const loadGroups = async () => {
+  try {
+    const response = await api.get('/lxc/groups')
+    groups.value = response.data?.groups || []
+  } catch (err) {
+    error.value = err.response?.data?.error || '加载分组失败'
+  }
+}
+
+const createGroupByName = async (value) => {
+  const name = String(value || '').trim()
+  if (!name) {
+    return null
+  }
+
+  const existing = groups.value.find((group) => group.name.toLowerCase() === name.toLowerCase())
+  if (existing) {
+    return existing
+  }
+
+  creatingGroup.value = true
+  try {
+    const response = await api.post('/lxc/groups', { name })
+    const group = response.data?.group || response.data
+    if (group?.id) {
+      groups.value = [...groups.value.filter((item) => item.id !== group.id), group]
+      return group
+    }
+    await loadGroups()
+    return groups.value.find((item) => item.name.toLowerCase() === name.toLowerCase()) || null
+  } catch (err) {
+    error.value = err.response?.data?.error || '创建分组失败'
+    throw new Error(error.value)
+  } finally {
+    creatingGroup.value = false
+  }
+}
+
+const commitGroupInput = async (form, event) => {
+  if (event?.isComposing) {
+    return
+  }
+  const name = String(form.groupInput || '').trim()
+  if (!name) {
+    if (event?.key === ' ' || event?.code === 'Space') {
+      event.preventDefault()
+      form.groupInput = ''
+    }
+    return
+  }
+  event?.preventDefault?.()
+  const group = await createGroupByName(name)
+  if (!group) {
+    return
+  }
+  if (!isGroupSelected(form, group.id)) {
+    setFormGroupIds(form, [...(form.groupIds || []), group.id])
+  }
+  form.groupInput = ''
+}
+
+const handleGroupInputPaste = async (form, event) => {
+  const text = event.clipboardData?.getData('text') || ''
+  const names = text.split(/\s+/).map((name) => name.trim()).filter(Boolean)
+  if (names.length <= 1) {
+    return
+  }
+
+  event.preventDefault()
+  for (const name of names) {
+    const group = await createGroupByName(name)
+    if (group && !isGroupSelected(form, group.id)) {
+      setFormGroupIds(form, [...(form.groupIds || []), group.id])
+    }
+  }
+  form.groupInput = ''
+}
+
+const resolveGroupIds = async (form) => {
+  if (String(form.groupInput || '').trim()) {
+    await commitGroupInput(form)
+  }
+  return Array.isArray(form.groupIds) ? [...form.groupIds] : []
+}
+
+const openAssignGroupDialog = (container) => {
+  groupTargetContainer.value = container
+  groupForm.value = {
+    groupIds: (container.groups || []).map((group) => group.id),
+    groupInput: '',
+  }
+  showGroupDialog.value = true
+  error.value = ''
+  success.value = ''
+}
+
+const closeGroupDialog = () => {
+  showGroupDialog.value = false
+  groupTargetContainer.value = null
+  groupForm.value = { groupIds: [], groupInput: '' }
+}
+
+const saveContainerGroups = async () => {
+  if (!groupTargetContainer.value?.name) {
+    return
+  }
+
+  savingGroups.value = true
+  error.value = ''
+  success.value = ''
+
+  try {
+    const groupIds = await resolveGroupIds(groupForm.value)
+    await api.put('/lxc/groups/container', {
+      containerName: groupTargetContainer.value.name,
+      groupIds,
+    })
+    closeGroupDialog()
+    await Promise.all([loadGroups(), loadContainers()])
+    success.value = '分组已更新'
+  } catch (err) {
+    error.value = err.response?.data?.error || err.message || '保存分组失败'
+  } finally {
+    savingGroups.value = false
+  }
+}
 
 const loadContainers = async () => {
   if (environmentCheck.value && !environmentCheck.value.lxc.ready) {
@@ -739,12 +1182,14 @@ const createContainer = async () => {
   success.value = ''
 
   try {
+    const groupIds = await resolveGroupIds(newContainer.value)
     const response = await api.post('/lxc/create', {
       name: newContainer.value.name,
       password: newContainer.value.password,
       sourceType: newContainer.value.sourceType,
       image: newContainer.value.image,
       backupFile: newContainer.value.backupFile,
+      groupIds,
     })
     if (newContainer.value.sourceType === 'backup' && response.data?.restore) {
       restoreStatuses.value = {
@@ -763,7 +1208,7 @@ const createContainer = async () => {
       loadContainers()
     }, 2000)
   } catch (err) {
-    error.value = err.response?.data?.error || '创建容器失败'
+    error.value = err.response?.data?.error || err.message || '创建容器失败'
     creating.value = false // 出错时允许关闭对话框
   }
 }
@@ -1068,6 +1513,8 @@ const closeCreateDialog = () => {
     sourceType: 'default_image',
     image: '',
     backupFile: '',
+    groupIds: [],
+    groupInput: '',
   }
   error.value = ''
 }
@@ -1082,7 +1529,10 @@ const openCreateDialog = async () => {
     sourceType: 'default_image',
     image: '',
     backupFile: '',
+    groupIds: [],
+    groupInput: '',
   }
+  await loadGroups()
   await loadBackupArchives()
 }
 
@@ -1115,8 +1565,10 @@ const checkEnvironment = async () => {
 }
 
 onMounted(() => {
+  document.addEventListener('click', closeActionMenu)
   loadHostInfo()
   loadAppConfig()
+  loadGroups()
   checkEnvironment()
   loadBackupStatuses().then(() => {
     const hasRunningBackup = Object.values(backupStatuses.value).some(
@@ -1134,6 +1586,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', closeActionMenu)
   stopBackupPolling()
   stopRestorePolling()
 })

@@ -29,8 +29,18 @@ func CreateLxcContainer(c *gin.Context) {
 	}
 
 	if req.SourceType == models.LxcCreateSourceBackup {
+		groupService := service.NewLxcGroupService()
+		if err := groupService.ValidateGroupIDs(req.GroupIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
 		restore, err := service.GetLxcRestoreManager().StartRestore(req)
 		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := groupService.SetContainerGroups(req.Name, req.GroupIDs); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

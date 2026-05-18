@@ -75,14 +75,20 @@ func (s *LxcService) ListContainers() ([]models.LxcContainer, error) {
 	}
 
 	// 转换为模型
+	groupsByContainer, _ := NewLxcGroupService().GroupsByContainer()
 	containers := make([]models.LxcContainer, 0, len(rawContainers))
 	for _, raw := range rawContainers {
+		name := getString(raw, "name")
 		container := models.LxcContainer{
-			Name:     getString(raw, "name"),
+			Name:     name,
 			State:    getString(raw, "status"),
 			Type:     getString(raw, "type"),
 			Arch:     getString(raw, "architecture"),
 			Profiles: getStringSlice(raw, "profiles"),
+			Groups:   groupsByContainer[name],
+		}
+		if container.Groups == nil {
+			container.Groups = []models.LxcGroup{}
 		}
 
 		// 提取IP地址 - LXC的JSON格式中，网络信息可能在state字段下
@@ -661,6 +667,10 @@ func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
 	if sourceType == "" {
 		sourceType = models.LxcCreateSourceDefaultImage
 	}
+	groupService := NewLxcGroupService()
+	if err := groupService.ValidateGroupIDs(req.GroupIDs); err != nil {
+		return err
+	}
 
 	switch sourceType {
 	case models.LxcCreateSourceDefaultImage, models.LxcCreateSourceCustomImage:
@@ -671,9 +681,15 @@ func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
 				image = strings.TrimSpace(s.cfg.LxcImage)
 			}
 		}
-		return s.createContainerFromImage(name, password, image)
+		if err := s.createContainerFromImage(name, password, image); err != nil {
+			return err
+		}
+		return groupService.SetContainerGroups(name, req.GroupIDs)
 	case models.LxcCreateSourceBackup:
-		return s.createContainerFromBackup(name, password, strings.TrimSpace(req.BackupFile))
+		if err := s.createContainerFromBackup(name, password, strings.TrimSpace(req.BackupFile)); err != nil {
+			return err
+		}
+		return groupService.SetContainerGroups(name, req.GroupIDs)
 	default:
 		return fmt.Errorf("不支持的创建来源: %s", sourceType)
 	}
