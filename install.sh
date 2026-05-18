@@ -5,6 +5,7 @@ set -euo pipefail
 APP_NAME="${APP_NAME:-LabPanel}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/LabPanel}"
 REPO_URL="${REPO_URL:-}"
+GITHUB_PROXY="${GITHUB_PROXY:-}"
 APP_SERVICE="${APP_SERVICE:-labpanel}"
 FRP_SERVICE="${FRP_SERVICE:-frpc}"
 FRP_VERSION="${FRP_VERSION:-latest}"
@@ -25,6 +26,10 @@ FRP_AUTH_TOKEN="${FRP_AUTH_TOKEN:-change-me}"
 FRP_WEB_ADDR="${FRP_WEB_ADDR:-127.0.0.1}"
 FRP_WEB_PORT="${FRP_WEB_PORT:-7400}"
 START_SERVICES="${START_SERVICES:-1}"
+HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"
+HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$HTTP_PROXY}}"
+ALL_PROXY="${ALL_PROXY:-${all_proxy:-}}"
+NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
 RUN_DIR="$(pwd)"
 LABPANEL_URL=""
 FRP_SERVICE_CREATED="否"
@@ -96,6 +101,57 @@ normalize_service_name() {
     name="${1:-}"
     name="${name%.service}"
     echo "$name"
+}
+
+normalize_url_prefix() {
+    local prefix
+    prefix="${1:-}"
+    if [ -n "$prefix" ]; then
+        prefix="${prefix%/}/"
+    fi
+    echo "$prefix"
+}
+
+apply_github_proxy() {
+    local url
+    url="$1"
+    if [ -n "$GITHUB_PROXY" ]; then
+        case "$url" in
+            https://github.com/*|https://api.github.com/*|https://raw.githubusercontent.com/*)
+                echo "${GITHUB_PROXY}${url}"
+                return
+                ;;
+        esac
+    fi
+    echo "$url"
+}
+
+configure_network() {
+    GITHUB_PROXY="$(normalize_url_prefix "$GITHUB_PROXY")"
+
+    if [ -n "$HTTP_PROXY" ]; then
+        export HTTP_PROXY="$HTTP_PROXY" http_proxy="$HTTP_PROXY"
+    fi
+    if [ -n "$HTTPS_PROXY" ]; then
+        export HTTPS_PROXY="$HTTPS_PROXY" https_proxy="$HTTPS_PROXY"
+    fi
+    if [ -n "$ALL_PROXY" ]; then
+        export ALL_PROXY="$ALL_PROXY" all_proxy="$ALL_PROXY"
+    fi
+    if [ -n "$NO_PROXY" ]; then
+        export NO_PROXY="$NO_PROXY" no_proxy="$NO_PROXY"
+    fi
+}
+
+git_cmd() {
+    if [ -n "$GITHUB_PROXY" ]; then
+        git \
+            -c "url.${GITHUB_PROXY}https://github.com/.insteadOf=https://github.com/" \
+            -c "url.${GITHUB_PROXY}https://github.com/.insteadOf=git@github.com:" \
+            "$@"
+    else
+        git "$@"
+    fi
 }
 
 collect_inputs() {
@@ -280,10 +336,10 @@ prepare_source() {
     if [ ! -d "$INSTALL_DIR/.git" ]; then
         log "拉取代码到 ${INSTALL_DIR}..."
         mkdir -p "$(dirname "$INSTALL_DIR")"
-        git clone "$REPO_URL" "$INSTALL_DIR"
+        git_cmd clone "$REPO_URL" "$INSTALL_DIR"
     else
         log "安装目录已存在，更新代码..."
-        git -C "$INSTALL_DIR" pull --ff-only
+        git_cmd -C "$INSTALL_DIR" pull --ff-only
     fi
 }
 
@@ -306,6 +362,11 @@ ensure_env() {
     set_env_value "$env_file" "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
     set_env_value "$env_file" "APP_SERVICE" "$APP_SERVICE"
     set_env_value "$env_file" "FRP_SERVICE" "$FRP_SERVICE"
+    set_env_value "$env_file" "GITHUB_PROXY" "$GITHUB_PROXY"
+    set_env_value "$env_file" "HTTP_PROXY" "$HTTP_PROXY"
+    set_env_value "$env_file" "HTTPS_PROXY" "$HTTPS_PROXY"
+    set_env_value "$env_file" "ALL_PROXY" "$ALL_PROXY"
+    set_env_value "$env_file" "NO_PROXY" "$NO_PROXY"
     set_env_value "$env_file" "TOML_PATH" "$FRP_CONFIG_PATH"
     set_env_value "$env_file" "FRPC_PATH" "$FRPC_PATH"
     set_env_value "$env_file" "DOCS_PATH" "${INSTALL_DIR}/docs"
@@ -317,14 +378,19 @@ ensure_env() {
 }
 
 set_env_value() {
-    local file key value
+    local file key value escaped
     file="$1"
     key="$2"
     value="$3"
+    escaped="$value"
+    escaped="${escaped//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
+    escaped="${escaped//\$/\\\$}"
+    escaped="${escaped//\`/\\\`}"
     if grep -qE "^${key}=" "$file"; then
         sed -i "/^${key}=/d" "$file"
     fi
-    printf '%s=%s\n' "$key" "$value" >> "$file"
+    printf '%s="%s"\n' "$key" "$escaped" >> "$file"
 }
 
 build_app() {
@@ -337,7 +403,7 @@ install_frp() {
     arch="$(detect_arch)"
 
     if [ "$FRP_VERSION" = "latest" ]; then
-        tag="$(curl -fsSL https://api.github.com/repos/fatedier/frp/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+        tag="$(curl -fsSL "$(apply_github_proxy "https://api.github.com/repos/fatedier/frp/releases/latest")" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
     else
         tag="$FRP_VERSION"
     fi
@@ -345,7 +411,7 @@ install_frp() {
 
     version="${tag#v}"
     tarball="frp_${version}_linux_${arch}.tar.gz"
-    url="https://github.com/fatedier/frp/releases/download/${tag}/${tarball}"
+    url="$(apply_github_proxy "https://github.com/fatedier/frp/releases/download/${tag}/${tarball}")"
     tmpdir="$(mktemp -d)"
 
     log "下载 FRP ${tag} 到 ${FRP_INSTALL_DIR}..."
@@ -494,6 +560,7 @@ print_summary() {
 
 main() {
     need_root "$@"
+    configure_network
     collect_inputs
     APP_SERVICE="$(normalize_service_name "$APP_SERVICE")"
     FRP_SERVICE="$(normalize_service_name "$FRP_SERVICE")"

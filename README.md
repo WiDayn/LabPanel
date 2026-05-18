@@ -50,6 +50,13 @@ curl -fsSL https://raw.githubusercontent.com/WiDayn/LabPanel/main/install.sh -o 
 sudo bash install.sh
 ```
 
+如果需要通过 GitHub 镜像下载安装脚本：
+
+```bash
+curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/WiDayn/LabPanel/main/install.sh -o install.sh
+sudo GITHUB_PROXY=https://gh-proxy.com/ bash install.sh
+```
+
 如果你已经克隆了本仓库，也可以直接运行：
 
 ```bash
@@ -64,6 +71,8 @@ sudo REPO_URL=https://github.com/WiDayn/LabPanel.git \
   PORT=8080 \
   ADMIN_USERNAME=admin \
   ADMIN_PASSWORD=change-me \
+  GITHUB_PROXY=https://gh-proxy.com/ \
+  HTTPS_PROXY=http://127.0.0.1:7890 \
   USE_FRP=y \
   FRP_MODE=install \
   FRP_INSTALL_DIR="$PWD/frp" \
@@ -117,6 +126,12 @@ sudo ./update.sh
 sudo APP_SERVICE=labpanel FRP_SERVICE=frpc ./update.sh
 ```
 
+如果服务器访问 GitHub 较慢，可以在 `.env` 中设置，或临时通过命令行传入：
+
+```bash
+sudo GITHUB_PROXY=https://gh-proxy.com/ HTTPS_PROXY=http://127.0.0.1:7890 ./update.sh
+```
+
 ## 快速开始
 
 ### 1. 安装基础依赖
@@ -152,13 +167,18 @@ cd ..
 
 ```env
 PORT=8080
-APP_TITLE=LabPanel 管理面板
+APP_TITLE="LabPanel 管理面板"
 JWT_SECRET=change-me
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 
 APP_SERVICE=labpanel
 FRP_SERVICE=frpc
+GITHUB_PROXY=
+HTTP_PROXY=
+HTTPS_PROXY=
+ALL_PROXY=
+NO_PROXY=
 TOML_PATH=/etc/frp/frpc.toml
 FRPC_PATH=/usr/local/bin/frpc
 
@@ -176,6 +196,8 @@ LXC_IMAGE=ubuntu:22.04
 - `ADMIN_PASSWORD`: 面板登录密码
 - `APP_SERVICE`: `systemd` 中的 LabPanel 服务名
 - `FRP_SERVICE`: `systemd` 中的 FRP 服务名
+- `GITHUB_PROXY`: GitHub 镜像前缀，例如 `https://gh-proxy.com/`
+- `HTTP_PROXY` / `HTTPS_PROXY`: 安装和更新时使用的 HTTP(S) 代理
 - `TOML_PATH`: `frpc.toml` 配置文件路径
 - `FRPC_PATH`: `frpc` 可执行文件路径
 - `DOCS_PATH`: 文档目录
