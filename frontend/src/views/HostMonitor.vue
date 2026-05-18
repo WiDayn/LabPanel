@@ -450,17 +450,67 @@ const groupColorClasses = {
   indigo: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
 }
 
-const ownerColorClasses = {
-  blue: 'bg-cyan-100 text-cyan-800 ring-cyan-300',
-  emerald: 'bg-teal-100 text-teal-800 ring-teal-300',
-  amber: 'bg-orange-100 text-orange-800 ring-orange-300',
-  violet: 'bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-300',
-  rose: 'bg-pink-100 text-pink-800 ring-pink-300',
-  cyan: 'bg-sky-100 text-sky-800 ring-sky-300',
-  lime: 'bg-green-100 text-green-800 ring-green-300',
-  orange: 'bg-amber-100 text-amber-800 ring-amber-300',
-  slate: 'bg-slate-200 text-slate-800 ring-slate-300',
-  indigo: 'bg-violet-100 text-violet-800 ring-violet-300',
+const ownerColorClassVariants = {
+  blue: [
+    'bg-blue-100 text-blue-800 ring-blue-300',
+    'bg-sky-100 text-sky-800 ring-sky-300',
+    'bg-cyan-100 text-cyan-800 ring-cyan-300',
+    'bg-indigo-100 text-indigo-800 ring-indigo-300',
+  ],
+  emerald: [
+    'bg-emerald-100 text-emerald-800 ring-emerald-300',
+    'bg-teal-100 text-teal-800 ring-teal-300',
+    'bg-green-100 text-green-800 ring-green-300',
+    'bg-cyan-100 text-cyan-800 ring-cyan-300',
+  ],
+  amber: [
+    'bg-amber-100 text-amber-800 ring-amber-300',
+    'bg-yellow-100 text-yellow-800 ring-yellow-300',
+    'bg-orange-100 text-orange-800 ring-orange-300',
+    'bg-lime-100 text-lime-800 ring-lime-300',
+  ],
+  violet: [
+    'bg-violet-100 text-violet-800 ring-violet-300',
+    'bg-purple-100 text-purple-800 ring-purple-300',
+    'bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-300',
+    'bg-indigo-100 text-indigo-800 ring-indigo-300',
+  ],
+  rose: [
+    'bg-rose-100 text-rose-800 ring-rose-300',
+    'bg-pink-100 text-pink-800 ring-pink-300',
+    'bg-red-100 text-red-800 ring-red-300',
+    'bg-orange-100 text-orange-800 ring-orange-300',
+  ],
+  cyan: [
+    'bg-cyan-100 text-cyan-800 ring-cyan-300',
+    'bg-sky-100 text-sky-800 ring-sky-300',
+    'bg-blue-100 text-blue-800 ring-blue-300',
+    'bg-teal-100 text-teal-800 ring-teal-300',
+  ],
+  lime: [
+    'bg-lime-100 text-lime-800 ring-lime-300',
+    'bg-green-100 text-green-800 ring-green-300',
+    'bg-emerald-100 text-emerald-800 ring-emerald-300',
+    'bg-yellow-100 text-yellow-800 ring-yellow-300',
+  ],
+  orange: [
+    'bg-orange-100 text-orange-800 ring-orange-300',
+    'bg-amber-100 text-amber-800 ring-amber-300',
+    'bg-red-100 text-red-800 ring-red-300',
+    'bg-yellow-100 text-yellow-800 ring-yellow-300',
+  ],
+  slate: [
+    'bg-slate-200 text-slate-800 ring-slate-300',
+    'bg-zinc-200 text-zinc-800 ring-zinc-300',
+    'bg-neutral-200 text-neutral-800 ring-neutral-300',
+    'bg-stone-200 text-stone-800 ring-stone-300',
+  ],
+  indigo: [
+    'bg-indigo-100 text-indigo-800 ring-indigo-300',
+    'bg-blue-100 text-blue-800 ring-blue-300',
+    'bg-violet-100 text-violet-800 ring-violet-300',
+    'bg-sky-100 text-sky-800 ring-sky-300',
+  ],
 }
 
 const visibleGroups = (items) => (Array.isArray(items) ? items.slice(0, 2) : [])
@@ -472,6 +522,19 @@ const groupBadgeClass = (group) => [
   groupColorClasses[group?.color] || groupColorClasses.slate,
 ]
 
+const stableColorIndex = (value, total) => {
+  let hash = 0
+  for (const char of String(value || '')) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return total > 0 ? hash % total : 0
+}
+
+const ownerColorClass = (groupColor, containerName) => {
+  const variants = ownerColorClassVariants[groupColor] || ownerColorClassVariants.blue
+  return variants[stableColorIndex(containerName, variants.length)]
+}
+
 const ownerBadgeClass = (process) => {
   if (process.ownerType !== 'container') {
     return 'inline-flex max-w-full items-center truncate rounded px-2 py-1 text-xs font-medium ring-1 bg-gray-100 text-gray-700 ring-gray-200'
@@ -479,7 +542,7 @@ const ownerBadgeClass = (process) => {
   const groupColor = Array.isArray(process.groups) && process.groups.length ? process.groups[0]?.color : 'blue'
   return [
     'inline-flex max-w-full items-center truncate rounded px-2 py-1 text-xs font-medium ring-1',
-    ownerColorClasses[groupColor] || ownerColorClasses.blue,
+    ownerColorClass(groupColor, process.containerName || process.user),
   ]
 }
 
