@@ -156,8 +156,9 @@ JWT_SECRET=change-me
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 
+APP_SERVICE=labpanel
+FRP_SERVICE=frpc
 TOML_PATH=/etc/frp/frpc.toml
-SERVICE_NAME=frpc
 FRPC_PATH=/usr/local/bin/frpc
 
 DOCS_PATH=./docs
@@ -171,8 +172,9 @@ LXC_IMAGE=ubuntu:22.04
 - `JWT_SECRET`: 登录签名密钥
 - `ADMIN_USERNAME`: 面板登录用户名
 - `ADMIN_PASSWORD`: 面板登录密码
+- `APP_SERVICE`: `systemd` 中的 LabPanel 服务名
+- `FRP_SERVICE`: `systemd` 中的 FRP 服务名
 - `TOML_PATH`: `frpc.toml` 配置文件路径
-- `SERVICE_NAME`: `systemd` 中的 FRP 服务名
 - `FRPC_PATH`: `frpc` 可执行文件路径
 - `DOCS_PATH`: 文档目录
 - `UPLOAD_PATH`: 上传目录
@@ -380,7 +382,7 @@ GET /api/check
 
 - `FRPC_PATH` 是否正确
 - `TOML_PATH` 指向的配置文件是否存在
-- `SERVICE_NAME` 对应的服务是否已创建
+- `FRP_SERVICE` 对应的服务是否已创建
 
 可手动验证：
 

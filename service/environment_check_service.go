@@ -33,7 +33,7 @@ func (s *EnvironmentCheckService) checkFRP() models.ComponentCheck {
 
 	frpcInstalled := s.commandExists(s.cfg.FrpcPath, "frpc")
 	configExists := s.fileExists(s.cfg.TomlPath)
-	serviceExists := s.systemdUnitExists(s.cfg.ServiceName)
+	serviceExists := s.systemdUnitExists(s.cfg.FrpService)
 
 	if frpcInstalled {
 		check.Installed = true
@@ -46,7 +46,7 @@ func (s *EnvironmentCheckService) checkFRP() models.ComponentCheck {
 	}
 
 	if !serviceExists {
-		check.MissingItems = append(check.MissingItems, "systemd 服务 "+s.cfg.ServiceName)
+		check.MissingItems = append(check.MissingItems, "systemd 服务 "+s.cfg.FrpService)
 	}
 
 	check.Ready = frpcInstalled && configExists && serviceExists
@@ -165,11 +165,11 @@ func (s *EnvironmentCheckService) buildFRPGuides() []models.InstallGuide {
 		},
 		models.InstallCommand{
 			Label:   "创建 systemd 服务",
-			Command: "sudo editor /etc/systemd/system/" + s.cfg.ServiceName + ".service",
+			Command: "sudo editor /etc/systemd/system/" + s.cfg.FrpService + ".service",
 		},
 		models.InstallCommand{
 			Label:   "启用并启动服务",
-			Command: "sudo systemctl daemon-reload && sudo systemctl enable --now " + s.cfg.ServiceName,
+			Command: "sudo systemctl daemon-reload && sudo systemctl enable --now " + s.cfg.FrpService,
 		},
 	)
 
