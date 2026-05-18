@@ -42,32 +42,34 @@
           </div>
         </Card>
 
-        <Card class="p-6">
-          <div class="flex items-center justify-between gap-4 mb-4">
+        <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 class="text-lg font-semibold">容器默认配置</h2>
-              <p class="mt-1 text-sm text-gray-600">这里可以设置新建容器默认镜像，以及容器备份导出的保存目录。</p>
+              <h2 class="text-base font-semibold text-gray-900">容器默认设置</h2>
+              <p class="mt-1 text-xs text-gray-500">设置新建容器默认镜像，以及容器备份导出的保存目录。</p>
             </div>
           </div>
-          <div class="w-full space-y-4">
-            <div>
-              <label class="block text-sm font-medium mb-2">LXC 镜像</label>
-              <Input
-                v-model="appConfig.lxcImage"
-                :disabled="savingAppConfig || loadingAppConfig"
-                placeholder="ubuntu:22.04"
-              />
+          <div class="border-t border-gray-200 p-4">
+            <div class="grid gap-4 lg:grid-cols-2">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700">LXC 镜像</label>
+                <Input
+                  v-model="appConfig.lxcImage"
+                  :disabled="savingAppConfig || loadingAppConfig"
+                  placeholder="ubuntu:22.04"
+                />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700">容器备份目录</label>
+                <Input
+                  v-model="appConfig.lxcBackupDir"
+                  :disabled="savingAppConfig || loadingAppConfig"
+                  placeholder="./backups"
+                />
+              </div>
             </div>
-            <div>
-              <label class="block text-sm font-medium mb-2">容器备份目录</label>
-              <Input
-                v-model="appConfig.lxcBackupDir"
-                :disabled="savingAppConfig || loadingAppConfig"
-                placeholder="./backups"
-              />
-            </div>
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div class="text-sm text-gray-500 space-y-1">
+            <div class="mt-4 flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center">
+              <div class="space-y-1 text-sm text-gray-500">
                 <p>
                   当前新建容器默认使用：<span class="font-medium text-gray-700">{{ appConfig.lxcImage || 'ubuntu:22.04' }}</span>
                 </p>
@@ -80,7 +82,7 @@
               </Button>
             </div>
           </div>
-        </Card>
+        </section>
 
         <Card
           v-if="environmentCheck && !environmentCheck.lxc.ready"
@@ -121,20 +123,29 @@
         </Card>
 
         <!-- 容器列表卡片 -->
-        <Card v-if="environmentCheck?.lxc.ready !== false" class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">容器列表</h2>
+        <section
+          v-if="environmentCheck?.lxc.ready !== false"
+          class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm"
+        >
+          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-base font-semibold text-gray-900">LXC 容器列表</h2>
+              <div class="mt-1 text-xs text-gray-500">{{ containers.length }} 个容器</div>
+            </div>
             <div class="flex gap-2">
-              <Button @click="openCreateDialog">新增容器</Button>
-              <Button @click="loadContainers" :disabled="loading">刷新</Button>
+              <Button size="sm" @click="openCreateDialog">新增容器</Button>
+              <Button variant="outline" size="sm" @click="loadContainers" :disabled="loading">
+                {{ loading ? '刷新中...' : '刷新' }}
+              </Button>
             </div>
           </div>
-          <div v-if="error" class="mb-4 text-red-500 text-sm">{{ error }}</div>
-          <div v-if="success" class="mb-4 text-green-500 text-sm">{{ success }}</div>
-          <div
-            v-if="activeRestores.length > 0"
-            class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4"
-          >
+          <div class="border-t border-gray-200 p-4">
+            <div v-if="error" class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+            <div v-if="success" class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{{ success }}</div>
+            <div
+              v-if="activeRestores.length > 0"
+              class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4"
+            >
             <div class="text-sm font-medium text-amber-900">恢复任务状态</div>
             <div class="mt-1 text-xs text-amber-800">
               备份包导入会在后台运行，20GB 备份可能需要几分钟。任务运行时请不要重复创建同名容器。
@@ -175,11 +186,11 @@
                 </details>
               </div>
             </div>
-          </div>
-          <div
-            v-if="activeBackups.length > 0"
-            class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4"
-          >
+            </div>
+            <div
+              v-if="activeBackups.length > 0"
+              class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4"
+            >
             <div class="text-sm font-medium text-blue-900">备份任务状态</div>
             <div class="mt-3 space-y-3">
               <div
@@ -211,29 +222,29 @@
                 </div>
               </div>
             </div>
-          </div>
+            </div>
           
-          <div v-if="loading && containers.length === 0" class="text-center py-8 text-gray-500">
-            加载中...
-          </div>
-          <div v-else-if="containers.length === 0" class="text-center py-8 text-gray-500">
-            暂无容器
-          </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full border-collapse table-fixed">
+            <div v-if="loading && containers.length === 0" class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+              加载中...
+            </div>
+            <div v-else-if="containers.length === 0" class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+              暂无容器
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full table-fixed border-collapse text-sm">
               <thead>
-                <tr class="border-b">
-                  <th class="text-left p-2 w-48">名称</th>
-                  <th class="text-left p-2 w-24">状态</th>
-                  <th class="text-left p-2 w-36">IPv4</th>
-                  <th class="text-left p-2 w-48">IPv6</th>
-                  <th class="text-left p-2">操作</th>
+                <tr class="border-b text-left text-xs text-gray-500">
+                  <th class="w-48 px-2 py-2 font-medium">名称</th>
+                  <th class="w-24 px-2 py-2 font-medium">状态</th>
+                  <th class="w-36 px-2 py-2 font-medium">IPv4</th>
+                  <th class="w-48 px-2 py-2 font-medium">IPv6</th>
+                  <th class="px-2 py-2 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(container, index) in containers" :key="index" class="border-b">
-                  <td class="p-2 font-medium truncate" :title="container.name">{{ container.name }}</td>
-                  <td class="p-2">
+                <tr v-for="(container, index) in containers" :key="index" class="border-b last:border-b-0">
+                  <td class="truncate px-2 py-2 font-medium text-gray-900" :title="container.name">{{ container.name }}</td>
+                  <td class="px-2 py-2">
                     <span
                       :class="[
                         'px-2 py-1 rounded text-xs',
@@ -243,13 +254,13 @@
                       {{ container.state }}
                     </span>
                   </td>
-                  <td class="p-2 truncate" :title="container.ipv4 || '-'">{{ container.ipv4 || '-' }}</td>
-                  <td class="p-2">
+                  <td class="truncate px-2 py-2 text-gray-700" :title="container.ipv4 || '-'">{{ container.ipv4 || '-' }}</td>
+                  <td class="px-2 py-2 text-gray-700">
                     <div class="truncate" :title="container.ipv6 || '-'">
                       {{ container.ipv6 || '-' }}
                     </div>
                   </td>
-                  <td class="p-2">
+                  <td class="px-2 py-2">
                     <div class="flex gap-2 flex-nowrap whitespace-nowrap">
                       <Button 
                         v-if="container.state !== 'Running'" 
@@ -291,9 +302,10 @@
                   </td>
                 </tr>
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
-        </Card>
+        </section>
       </div>
     </main>
 
