@@ -9,6 +9,10 @@ type LoginResponse struct {
 	Token string `json:"token"`
 }
 
+type PublicConfigResponse struct {
+	Title string `json:"title"`
+}
+
 type ConfigResponse struct {
 	Content string `json:"content"`
 }
