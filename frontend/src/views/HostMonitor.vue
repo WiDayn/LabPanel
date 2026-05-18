@@ -493,8 +493,8 @@ const formatCPUTopology = (cores, threads) => {
   return `${coreCount}C${threadCount}T`
 }
 const formatCPUValue = (cpu, system) => {
-  const cores = Number(system.cpuCores || 0)
-  const threads = Number(system.cpuThreads || 0)
+  const cores = Number(cpu?.cores || system.cpuCores || 0)
+  const threads = Number(cpu?.threads || system.cpuThreads || 0)
   const topology = formatCPUTopology(cores, threads)
   const model = displayCPUModel(cpu?.model || system.cpuModel) || '-'
   const frequency = formatFrequency(cpu?.maxMhz || cpu?.currentMhz || system.cpuMhz)

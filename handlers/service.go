@@ -20,7 +20,7 @@ func RestartService(c *gin.Context) {
 
 func GetServiceStatus(c *gin.Context) {
 	systemctlService := service.NewSystemctlService()
-	isActive, statusDetail, err := systemctlService.GetStatus()
+	isActive, statusDetail, detailCommand, err := systemctlService.GetStatus()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -32,9 +32,9 @@ func GetServiceStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.ServiceStatusResponse{
-		Status:       status,
-		Active:       isActive,
-		StatusDetail: statusDetail,
+		Status:        status,
+		Active:        isActive,
+		StatusDetail:  statusDetail,
+		DetailCommand: detailCommand,
 	})
 }
-

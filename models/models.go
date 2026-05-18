@@ -22,9 +22,10 @@ type ConfigUpdateRequest struct {
 }
 
 type ServiceStatusResponse struct {
-	Status       string `json:"status"`
-	Active       bool   `json:"active"`
-	StatusDetail string `json:"statusDetail"`
+	Status        string `json:"status"`
+	Active        bool   `json:"active"`
+	StatusDetail  string `json:"statusDetail"`
+	DetailCommand string `json:"detailCommand"`
 }
 
 type InstallCommand struct {
