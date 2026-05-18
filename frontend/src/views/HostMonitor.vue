@@ -490,7 +490,7 @@ const formatCPUTopology = (cores, threads) => {
   const coreCount = Number(cores || 0)
   const threadCount = Number(threads || 0)
   if (!coreCount || !threadCount) return ''
-  return `${coreCount}C${threadCount}T`
+  return `${coreCount}C / ${threadCount}T`
 }
 const formatCPUValue = (cpu, system) => {
   const cores = Number(system.cpuCores || 0)
