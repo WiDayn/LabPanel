@@ -50,31 +50,52 @@
           <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-base font-semibold text-gray-900">服务状态</h2>
-              <div class="mt-1 text-xs text-gray-500">状态: {{ serviceStatus.status }}</div>
-            </div>
-            <Button variant="outline" size="sm" @click="refreshStatus" :disabled="loading">
-              {{ loading ? '刷新中...' : '刷新状态' }}
-            </Button>
-          </div>
-          <div class="border-t border-gray-200 p-4">
-            <div class="flex flex-wrap items-center gap-4">
-              <div class="flex items-center gap-2">
-                <div
+              <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                <span
                   :class="[
-                    'h-3 w-3 rounded-full',
+                    'h-2.5 w-2.5 rounded-full',
                     serviceStatus.active ? 'bg-green-500' : 'bg-red-500',
                   ]"
-                ></div>
-                <span class="text-sm font-medium text-gray-900">
+                ></span>
+                <span class="font-medium text-gray-700">
                   {{ serviceStatus.active ? '运行中' : '已停止' }}
                 </span>
+                <span class="text-gray-300">·</span>
+                <span>{{ serviceStatus.status }}</span>
               </div>
-              <span class="text-sm text-gray-600">状态: {{ serviceStatus.status }}</span>
             </div>
-            <div v-if="serviceStatus.statusDetail" class="mt-4">
+            <div class="flex items-center gap-2">
+              <Button variant="outline" size="sm" @click="refreshStatus" :disabled="loading">
+                {{ loading ? '刷新中...' : '刷新' }}
+              </Button>
+              <button
+                type="button"
+                class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50"
+                :aria-label="showStatusDetail ? '收起详细状态' : '展开详细状态'"
+                :title="showStatusDetail ? '收起详细状态' : '展开详细状态'"
+                @click="showStatusDetail = !showStatusDetail"
+              >
+                <span
+                  class="h-0 w-0 border-x-[5px] border-t-[6px] border-x-transparent border-t-gray-500 transition-transform"
+                  :class="showStatusDetail ? 'rotate-0' : '-rotate-90'"
+                ></span>
+              </button>
+            </div>
+          </div>
+          <div v-show="showStatusDetail" class="border-t border-gray-200 p-4">
+            <div class="mb-3">
               <h3 class="text-sm font-medium text-gray-900">详细状态</h3>
-              <pre class="mt-2 max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800">{{ serviceStatus.statusDetail }}</pre>
+              <div class="mt-1 text-xs text-gray-500">
+                {{ serviceStatus.detailCommand || frpStatusCommand }}
+              </div>
             </div>
+              <pre
+                v-if="serviceStatus.statusDetail"
+                class="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800"
+              >{{ serviceStatus.statusDetail }}</pre>
+              <div v-else class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                暂无详细状态。
+              </div>
           </div>
         </section>
 
@@ -200,11 +221,13 @@ import AppHeader from '@/components/AppHeader.vue'
 
 const proxies = ref([])
 const frpConfig = ref({ serverAddr: '', serverPort: 0 })
-const serviceStatus = ref({ active: false, status: 'unknown', statusDetail: '' })
+const frpStatusCommand = 'systemctl status frpc'
+const serviceStatus = ref({ active: false, status: 'unknown', statusDetail: '', detailCommand: '' })
 const environmentCheck = ref(null)
 const checkingEnvironment = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
+const showStatusDetail = ref(false)
 const error = ref('')
 const success = ref('')
 const showAddDialog = ref(false)
@@ -348,7 +371,7 @@ const checkEnvironment = async () => {
       await Promise.all([loadProxies(), refreshStatus()])
     } else {
       proxies.value = []
-      serviceStatus.value = { active: false, status: 'unavailable', statusDetail: '' }
+      serviceStatus.value = { active: false, status: 'unavailable', statusDetail: '', detailCommand: '' }
     }
   } catch (err) {
     error.value = err.response?.data?.error || '环境检查失败'
