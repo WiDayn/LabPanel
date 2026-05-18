@@ -191,10 +191,12 @@ func (s *LxcService) DeleteContainer(name string) error {
 		if strings.Contains(outputStr, "Instance not found") ||
 			strings.Contains(outputStr, "not found") ||
 			strings.Contains(outputStr, "does not exist") {
+			_ = NewLxcGroupService().SetContainerGroups(name, nil)
 			return nil
 		}
 		return fmt.Errorf("删除容器失败: %v, 输出: %s", err, outputStr)
 	}
+	_ = NewLxcGroupService().SetContainerGroups(name, nil)
 	return nil
 }
 

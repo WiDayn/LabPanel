@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -56,6 +57,11 @@ func (s *LxcGroupService) List() (models.LxcGroupsResponse, error) {
 	if err != nil {
 		return models.LxcGroupsResponse{}, err
 	}
+	if s.cleanupStoreLocked(&store, true) {
+		if err := s.saveLocked(store); err != nil {
+			return models.LxcGroupsResponse{}, err
+		}
+	}
 
 	return models.LxcGroupsResponse{
 		Groups:          cloneGroups(store.Groups),
@@ -76,6 +82,7 @@ func (s *LxcGroupService) Create(name string) (models.LxcGroup, error) {
 	if err != nil {
 		return models.LxcGroup{}, err
 	}
+	s.cleanupStoreLocked(&store, true)
 	for _, group := range store.Groups {
 		if strings.EqualFold(strings.TrimSpace(group.Name), name) {
 			return models.LxcGroup{}, fmt.Errorf("分组名称已存在: %s", name)
@@ -118,6 +125,7 @@ func (s *LxcGroupService) SetContainerGroups(containerName string, groupIDs []st
 	} else {
 		store.ContainerGroups[containerName] = normalized
 	}
+	s.cleanupStoreLocked(&store, false)
 	return s.saveLocked(store)
 }
 
@@ -148,6 +156,9 @@ func (s *LxcGroupService) GroupsByContainer() (map[string][]models.LxcGroup, err
 	store, err := s.loadLocked()
 	if err != nil {
 		return nil, err
+	}
+	if normalizeGroupStore(&store) {
+		_ = s.saveLocked(store)
 	}
 
 	byID := make(map[string]models.LxcGroup, len(store.Groups))
@@ -195,6 +206,190 @@ func (s *LxcGroupService) loadLocked() (lxcGroupStore, error) {
 		store.ContainerGroups = map[string][]string{}
 	}
 	return store, nil
+}
+
+func (s *LxcGroupService) cleanupStoreLocked(store *lxcGroupStore, pruneStaleContainers bool) bool {
+	changed := normalizeGroupStore(store)
+	if pruneStaleContainers {
+		if containerNames, err := currentLxcContainerNameSet(); err == nil {
+			changed = pruneStaleContainerGroups(store, containerNames) || changed
+		}
+	}
+	changed = pruneUnusedGroups(store) || changed
+	return changed
+}
+
+func normalizeGroupStore(store *lxcGroupStore) bool {
+	if store.Groups == nil {
+		store.Groups = []models.LxcGroup{}
+	}
+	if store.ContainerGroups == nil {
+		store.ContainerGroups = map[string][]string{}
+	}
+
+	changed := false
+	seenNames := map[string]struct{}{}
+	validIDs := map[string]struct{}{}
+	groups := make([]models.LxcGroup, 0, len(store.Groups))
+	for _, group := range store.Groups {
+		originalID := group.ID
+		originalName := group.Name
+		originalColor := group.Color
+		group.ID = strings.TrimSpace(group.ID)
+		group.Name = strings.TrimSpace(group.Name)
+		group.Color = strings.TrimSpace(group.Color)
+		if group.ID == "" || group.Name == "" {
+			changed = true
+			continue
+		}
+		nameKey := strings.ToLower(group.Name)
+		if _, ok := seenNames[nameKey]; ok {
+			changed = true
+			continue
+		}
+		seenNames[nameKey] = struct{}{}
+		if group.Color == "" {
+			group.Color = lxcGroupColors[len(groups)%len(lxcGroupColors)]
+		}
+		if group.ID != originalID || group.Name != originalName || group.Color != originalColor {
+			changed = true
+		}
+		validIDs[group.ID] = struct{}{}
+		groups = append(groups, group)
+	}
+	if len(groups) != len(store.Groups) {
+		changed = true
+	}
+	store.Groups = groups
+
+	containerGroups := make(map[string][]string, len(store.ContainerGroups))
+	for containerName, groupIDs := range store.ContainerGroups {
+		trimmedName := strings.TrimSpace(containerName)
+		if trimmedName == "" {
+			changed = true
+			continue
+		}
+		normalizedIDs, idsChanged := normalizeStoredGroupIDs(groupIDs, validIDs)
+		if idsChanged || trimmedName != containerName {
+			changed = true
+		}
+		if len(normalizedIDs) == 0 {
+			changed = true
+			continue
+		}
+		if existing, ok := containerGroups[trimmedName]; ok {
+			containerGroups[trimmedName] = mergeGroupIDs(existing, normalizedIDs)
+			changed = true
+			continue
+		}
+		containerGroups[trimmedName] = normalizedIDs
+	}
+	if len(containerGroups) != len(store.ContainerGroups) {
+		changed = true
+	}
+	store.ContainerGroups = containerGroups
+	return changed
+}
+
+func normalizeStoredGroupIDs(groupIDs []string, validIDs map[string]struct{}) ([]string, bool) {
+	changed := false
+	seen := map[string]struct{}{}
+	normalized := make([]string, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		trimmedID := strings.TrimSpace(groupID)
+		if trimmedID == "" {
+			changed = true
+			continue
+		}
+		if _, ok := validIDs[trimmedID]; !ok {
+			changed = true
+			continue
+		}
+		if _, ok := seen[trimmedID]; ok {
+			changed = true
+			continue
+		}
+		if trimmedID != groupID {
+			changed = true
+		}
+		seen[trimmedID] = struct{}{}
+		normalized = append(normalized, trimmedID)
+	}
+	if len(normalized) != len(groupIDs) {
+		changed = true
+	}
+	return normalized, changed
+}
+
+func mergeGroupIDs(left, right []string) []string {
+	seen := map[string]struct{}{}
+	merged := make([]string, 0, len(left)+len(right))
+	for _, groupID := range append(append([]string{}, left...), right...) {
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		merged = append(merged, groupID)
+	}
+	return merged
+}
+
+func pruneStaleContainerGroups(store *lxcGroupStore, containerNames map[string]struct{}) bool {
+	changed := false
+	for containerName := range store.ContainerGroups {
+		if _, ok := containerNames[containerName]; !ok {
+			delete(store.ContainerGroups, containerName)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func pruneUnusedGroups(store *lxcGroupStore) bool {
+	used := map[string]struct{}{}
+	for _, groupIDs := range store.ContainerGroups {
+		for _, groupID := range groupIDs {
+			used[groupID] = struct{}{}
+		}
+	}
+
+	changed := false
+	groups := make([]models.LxcGroup, 0, len(store.Groups))
+	for _, group := range store.Groups {
+		if _, ok := used[group.ID]; !ok {
+			changed = true
+			continue
+		}
+		groups = append(groups, group)
+	}
+	if len(groups) != len(store.Groups) {
+		changed = true
+	}
+	store.Groups = groups
+	return changed
+}
+
+func currentLxcContainerNameSet() (map[string]struct{}, error) {
+	output, err := exec.Command("lxc", "list", "--format", "json").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("执行 lxc list 失败: %v, 输出: %s", err, string(output))
+	}
+	jsonOutput, err := extractJSONArray(output)
+	if err != nil {
+		return nil, err
+	}
+	var rawContainers []map[string]interface{}
+	if err := json.Unmarshal(jsonOutput, &rawContainers); err != nil {
+		return nil, err
+	}
+	containerNames := make(map[string]struct{}, len(rawContainers))
+	for _, raw := range rawContainers {
+		name := strings.TrimSpace(getString(raw, "name"))
+		if name != "" {
+			containerNames[name] = struct{}{}
+		}
+	}
+	return containerNames, nil
 }
 
 func (s *LxcGroupService) saveLocked(store lxcGroupStore) error {
