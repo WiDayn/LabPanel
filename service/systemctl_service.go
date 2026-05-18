@@ -25,20 +25,19 @@ func (s *SystemctlService) Restart() error {
 	return nil
 }
 
-func (s *SystemctlService) GetStatus() (bool, string, error) {
+func (s *SystemctlService) GetStatus() (bool, string, string, error) {
 	cmd := exec.Command("systemctl", "is-active", s.cfg.FrpService)
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return false, "unknown", nil
-	}
-
 	status := strings.TrimSpace(string(output))
 	isActive := status == "active"
 
-	// 获取详细状态
+	detailCommand := fmt.Sprintf("systemctl status %s", s.cfg.FrpService)
 	cmd = exec.Command("systemctl", "status", s.cfg.FrpService, "--no-pager", "-l")
-	statusOutput, _ := cmd.CombinedOutput()
-	statusDetail := string(statusOutput)
+	detailOutput, _ := cmd.CombinedOutput()
 
-	return isActive, statusDetail, nil
+	if err != nil {
+		return false, strings.TrimRight(string(detailOutput), "\n"), detailCommand, nil
+	}
+
+	return isActive, strings.TrimRight(string(detailOutput), "\n"), detailCommand, nil
 }
