@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"regexp"
 	"sort"
 	"strconv"
@@ -348,6 +349,7 @@ func queryGPUProcesses() []models.GPUProcess {
 
 	lines := nonEmptyLines(string(output))
 	processes := make([]models.GPUProcess, 0, len(lines))
+	groupsByContainer, _ := NewLxcGroupService().GroupsByContainer()
 	for _, line := range lines {
 		fields := csvLineFields(line)
 		if len(fields) < 4 {
@@ -358,13 +360,19 @@ func queryGPUProcesses() []models.GPUProcess {
 			continue
 		}
 		ownerType, containerName := processOwner(pid)
+		groups := groupsByContainer[containerName]
+		if groups == nil {
+			groups = []models.LxcGroup{}
+		}
 		processes = append(processes, models.GPUProcess{
 			GPUUUID:       fields[0],
 			PID:           pid,
+			User:          processUser(pid),
 			ProcessName:   fields[2],
 			UsedMemoryMiB: int64(atoiDefault(fields[3], 0)),
 			OwnerType:     ownerType,
 			ContainerName: containerName,
+			Groups:        groups,
 		})
 	}
 	return processes
@@ -447,6 +455,25 @@ func processOwner(pid int) (string, string) {
 		return "container", name
 	}
 	return "host", ""
+}
+
+func processUser(pid int) string {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "Uid:" {
+			continue
+		}
+		uid := fields[1]
+		if u, err := osuser.LookupId(uid); err == nil {
+			return u.Username
+		}
+		return uid
+	}
+	return ""
 }
 
 var lxcPayloadPattern = regexp.MustCompile(`lxc\.payload\.([^/\s:]+)`)
