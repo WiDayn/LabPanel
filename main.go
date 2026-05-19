@@ -19,6 +19,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
 	}
+	if err := service.InitMetricsStore(cfg.MetricsDBPath, cfg.MetricsRetentionDays); err != nil {
+		log.Fatalf("初始化监控数据存储失败: %v", err)
+	}
+	service.StartMetricsCleanup()
 	service.GetLxcMetricsService().Start()
 	service.GetGPUMonitorService().Start()
 	service.GetHostMetricsService().Start()

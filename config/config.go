@@ -3,26 +3,29 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	AppTitle      string
-	Port          string
-	JWTSecret     string
-	AdminUsername string
-	AdminPassword string
-	TomlPath      string
-	AppService    string
-	FrpService    string
-	FrpcPath      string
-	DocsPath      string
-	UploadPath    string
-	LxcImage      string
-	LxcBackupDir  string
-	LxcGroupsPath string
+	AppTitle             string
+	Port                 string
+	JWTSecret            string
+	AdminUsername        string
+	AdminPassword        string
+	TomlPath             string
+	AppService           string
+	FrpService           string
+	FrpcPath             string
+	DocsPath             string
+	UploadPath           string
+	LxcImage             string
+	LxcBackupDir         string
+	LxcGroupsPath        string
+	MetricsDBPath        string
+	MetricsRetentionDays int
 }
 
 func Load() (*Config, error) {
@@ -38,20 +41,22 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		AppTitle:      getEnv("APP_TITLE", "LabPanel 管理面板"),
-		Port:          getEnv("PORT", "8080"),
-		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
-		AdminPassword: getEnv("ADMIN_PASSWORD", "admin123"),
-		TomlPath:      getEnv("TOML_PATH", "/etc/frp/frpc.toml"),
-		AppService:    normalizeServiceName(getEnv("APP_SERVICE", "labpanel")),
-		FrpService:    normalizeServiceName(getEnvWithFallback("FRP_SERVICE", "SERVICE_NAME", "frpc")),
-		FrpcPath:      frpcPath,
-		DocsPath:      getEnv("DOCS_PATH", "./docs"),
-		UploadPath:    getEnv("UPLOAD_PATH", "./uploads"),
-		LxcImage:      getEnv("LXC_IMAGE", "ubuntu:22.04"),
-		LxcBackupDir:  getEnv("LXC_BACKUP_DIR", "./backups"),
-		LxcGroupsPath: getEnv("LXC_GROUPS_PATH", "./lxc_groups.json"),
+		AppTitle:             getEnv("APP_TITLE", "LabPanel 管理面板"),
+		Port:                 getEnv("PORT", "8080"),
+		JWTSecret:            getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		AdminUsername:        getEnv("ADMIN_USERNAME", "admin"),
+		AdminPassword:        getEnv("ADMIN_PASSWORD", "admin123"),
+		TomlPath:             getEnv("TOML_PATH", "/etc/frp/frpc.toml"),
+		AppService:           normalizeServiceName(getEnv("APP_SERVICE", "labpanel")),
+		FrpService:           normalizeServiceName(getEnvWithFallback("FRP_SERVICE", "SERVICE_NAME", "frpc")),
+		FrpcPath:             frpcPath,
+		DocsPath:             getEnv("DOCS_PATH", "./docs"),
+		UploadPath:           getEnv("UPLOAD_PATH", "./uploads"),
+		LxcImage:             getEnv("LXC_IMAGE", "ubuntu:22.04"),
+		LxcBackupDir:         getEnv("LXC_BACKUP_DIR", "./backups"),
+		LxcGroupsPath:        getEnv("LXC_GROUPS_PATH", "./lxc_groups.json"),
+		MetricsDBPath:        getEnv("METRICS_DB_PATH", "./data/metrics.db"),
+		MetricsRetentionDays: getEnvInt("METRICS_RETENTION_DAYS", 30),
 	}
 
 	return cfg, nil
@@ -69,6 +74,22 @@ func getEnvWithFallback(key, fallbackKey, defaultValue string) string {
 		return value
 	}
 	return getEnv(fallbackKey, defaultValue)
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return defaultValue
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("环境变量 %s=%q 不是有效整数，使用默认值 %d", key, value, defaultValue)
+		return defaultValue
+	}
+	if parsed < 0 {
+		return 0
+	}
+	return parsed
 }
 
 func normalizeServiceName(name string) string {

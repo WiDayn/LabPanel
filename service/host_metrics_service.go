@@ -33,6 +33,7 @@ type HostMetricsService struct {
 
 type hostMetricsRaw struct {
 	Timestamp        time.Time
+	BootID           string
 	CPUIdle          uint64
 	CPUTotal         uint64
 	CPUMHz           float64
@@ -77,6 +78,8 @@ func (s *HostMetricsService) Start() {
 	s.started = true
 	s.mu.Unlock()
 
+	s.restoreFromStore()
+
 	go func() {
 		s.Collect()
 		time.Sleep(2 * time.Second)
@@ -114,17 +117,24 @@ func (s *HostMetricsService) Collect() {
 	}
 
 	if s.hasRaw {
-		deltaTotal := raw.CPUTotal - s.lastRaw.CPUTotal
-		deltaIdle := raw.CPUIdle - s.lastRaw.CPUIdle
-		if deltaTotal > 0 && deltaIdle <= deltaTotal {
-			point.CPUPercent = clampFloat((1-float64(deltaIdle)/float64(deltaTotal))*100, 0, 100)
+		sameBoot := raw.BootID == "" || s.lastRaw.BootID == "" || raw.BootID == s.lastRaw.BootID
+		if sameBoot && raw.CPUTotal >= s.lastRaw.CPUTotal && raw.CPUIdle >= s.lastRaw.CPUIdle {
+			deltaTotal := raw.CPUTotal - s.lastRaw.CPUTotal
+			deltaIdle := raw.CPUIdle - s.lastRaw.CPUIdle
+			if deltaTotal > 0 && deltaIdle <= deltaTotal {
+				point.CPUPercent = clampFloat((1-float64(deltaIdle)/float64(deltaTotal))*100, 0, 100)
+			}
 		}
 
 		elapsed := raw.Timestamp.Sub(s.lastRaw.Timestamp).Seconds()
-		if elapsed > 0 {
+		if sameBoot && elapsed > 0 {
 			point.NetworkRxBps = positiveRate(raw.NetworkRxBytes, s.lastRaw.NetworkRxBytes, elapsed)
 			point.NetworkTxBps = positiveRate(raw.NetworkTxBytes, s.lastRaw.NetworkTxBytes, elapsed)
 		}
+	}
+
+	if store := GetMetricsStore(); store != nil {
+		_ = store.SaveHostRaw(raw)
 	}
 
 	s.lastRaw = raw
@@ -141,6 +151,43 @@ func (s *HostMetricsService) Collect() {
 		start++
 	}
 	s.history = s.history[start:]
+
+	if store := GetMetricsStore(); store != nil {
+		_ = store.InsertHostMetric(point)
+	}
+}
+
+func (s *HostMetricsService) restoreFromStore() {
+	store := GetMetricsStore()
+	if store == nil {
+		return
+	}
+
+	points, err := store.LoadHostMetricsSince(time.Now().Add(-metricsHistoryLoadWindow))
+	if err != nil {
+		return
+	}
+	raw, hasRaw, err := store.LoadHostRaw()
+	if err != nil {
+		hasRaw = false
+	}
+	if hasRaw {
+		currentBootID := readBootID()
+		if raw.Timestamp.IsZero() || time.Since(raw.Timestamp) > 5*hostMetricsSampleInterval || (currentBootID != "" && raw.BootID != "" && raw.BootID != currentBootID) {
+			hasRaw = false
+		}
+	}
+
+	s.mu.Lock()
+	s.history = points
+	if len(points) > 0 {
+		s.lastSweep = points[len(points)-1].Timestamp
+	}
+	if hasRaw {
+		s.lastRaw = raw
+		s.hasRaw = true
+	}
+	s.mu.Unlock()
 }
 
 func (s *HostMetricsService) Response(rangeKey string) models.HostMetricsResponse {
@@ -190,6 +237,7 @@ func collectHostMetricsRaw(now time.Time) hostMetricsRaw {
 
 	return hostMetricsRaw{
 		Timestamp:        now,
+		BootID:           readBootID(),
 		CPUIdle:          idle,
 		CPUTotal:         total,
 		CPUMHz:           readCPUMHz(),
@@ -199,6 +247,14 @@ func collectHostMetricsRaw(now time.Time) hostMetricsRaw {
 		NetworkRxBytes:   networkRx,
 		NetworkTxBytes:   networkTx,
 	}
+}
+
+func readBootID() string {
+	data, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func collectHostSystemOverview(summary models.HostMetricsPoint) models.HostSystemOverview {
