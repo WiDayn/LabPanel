@@ -120,6 +120,8 @@ func (s *LxcMetricsService) Start() {
 	s.started = true
 	s.mu.Unlock()
 
+	s.restoreFromStore()
+
 	go func() {
 		s.Collect()
 		ticker := time.NewTicker(lxcMetricsSampleInterval)
@@ -247,6 +249,9 @@ func (s *LxcMetricsService) storeRaw(raw lxcMetricsRaw) {
 
 	previous, hasPrevious := s.lastRaw[raw.Name]
 	s.lastRaw[raw.Name] = raw
+	if store := GetMetricsStore(); store != nil {
+		_ = store.SaveLxcRaw(raw)
+	}
 
 	sample := lxcMetricsSample{
 		Name:  raw.Name,
@@ -289,6 +294,44 @@ func (s *LxcMetricsService) storeRaw(raw lxcMetricsRaw) {
 		start++
 	}
 	s.history[raw.Name] = history[start:]
+	if store := GetMetricsStore(); store != nil {
+		_ = store.InsertLxcMetric(sample)
+	}
+}
+
+func (s *LxcMetricsService) restoreFromStore() {
+	store := GetMetricsStore()
+	if store == nil {
+		return
+	}
+
+	history, err := store.LoadLxcMetricsSince(time.Now().Add(-metricsHistoryLoadWindow))
+	if err != nil {
+		return
+	}
+	rawStates, err := store.LoadLxcRawStates()
+	if err != nil {
+		rawStates = map[string]lxcMetricsRaw{}
+	}
+	for name, raw := range rawStates {
+		if raw.Timestamp.IsZero() || time.Since(raw.Timestamp) > 5*lxcMetricsSampleInterval {
+			delete(rawStates, name)
+		}
+	}
+
+	s.mu.Lock()
+	s.history = history
+	s.lastRaw = rawStates
+	for _, samples := range history {
+		if len(samples) == 0 {
+			continue
+		}
+		latest := samples[len(samples)-1].Timestamp
+		if latest.After(s.lastSweep) {
+			s.lastSweep = latest
+		}
+	}
+	s.mu.Unlock()
 }
 
 func sameLxcMetricsSample(a, b lxcMetricsSample) bool {
@@ -315,6 +358,9 @@ func (s *LxcMetricsService) pruneMissing(seen map[string]struct{}) {
 		if _, ok := seen[name]; !ok {
 			delete(s.history, name)
 			delete(s.lastRaw, name)
+			if store := GetMetricsStore(); store != nil {
+				_ = store.DeleteLxcRaw(name)
+			}
 		}
 	}
 }

@@ -62,6 +62,8 @@ func (s *GPUMonitorService) Start() {
 	s.started = true
 	s.mu.Unlock()
 
+	s.restoreFromStore()
+
 	go func() {
 		s.Collect()
 		ticker := time.NewTicker(gpuSampleInterval)
@@ -127,11 +129,39 @@ func (s *GPUMonitorService) Collect() {
 				start++
 			}
 			s.history[gpu.UUID] = history[start:]
+			if store := GetMetricsStore(); store != nil {
+				_ = store.InsertGPUMemorySample(gpu.UUID, sample)
+			}
 		}
 		for uuid := range s.history {
 			if _, ok := seen[uuid]; !ok {
 				delete(s.history, uuid)
 			}
+		}
+	}
+	s.mu.Unlock()
+}
+
+func (s *GPUMonitorService) restoreFromStore() {
+	store := GetMetricsStore()
+	if store == nil {
+		return
+	}
+
+	history, err := store.LoadGPUMemoryHistorySince(time.Now().Add(-metricsHistoryLoadWindow))
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	s.history = history
+	for _, samples := range history {
+		if len(samples) == 0 {
+			continue
+		}
+		latest := samples[len(samples)-1].Timestamp
+		if latest.After(s.lastSweep) {
+			s.lastSweep = latest
 		}
 	}
 	s.mu.Unlock()
