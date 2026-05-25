@@ -165,81 +165,98 @@
         </section>
 
         <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <button
-            type="button"
-            class="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
-            @click="toggleSection('processes')"
-          >
+          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 class="text-base font-semibold text-gray-900">进程监控</h2>
-              <div class="mt-1 text-xs text-gray-500">{{ processes.length }} 个</div>
+              <div class="mt-1 text-xs text-gray-500">{{ processSubtitle }}</div>
             </div>
-            <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-gray-200 bg-white">
+            <button
+              type="button"
+              class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50"
+              :aria-label="processViewToggleLabel"
+              :title="processViewToggleLabel"
+              @click="cycleProcessViewMode"
+            >
               <span
-                class="h-0 w-0 border-x-[5px] border-t-[6px] border-x-transparent border-t-gray-500 transition-transform"
-                :class="sectionArrowClass('processes')"
+                class="h-0 w-0 border-x-[5px] border-t-[6px] border-x-transparent border-t-gray-600 transition-transform duration-200 ease-out"
+                :class="processViewIconClass"
               ></span>
-            </span>
-          </button>
-          <div v-show="!collapsedSections.processes" class="border-t border-gray-200 p-4">
-            <div v-if="processes.length" class="overflow-x-auto">
-              <table class="w-full min-w-[980px] table-fixed border-collapse text-sm">
-                <thead>
-                  <tr class="border-b text-left text-xs text-gray-500">
-                    <th class="w-20 px-2 py-2 font-medium">PID</th>
-                    <th class="px-2 py-2 font-medium">进程</th>
-                    <th class="w-28 px-2 py-2 font-medium">用户</th>
-                    <th class="w-40 px-2 py-2 font-medium">分组</th>
-                    <th class="w-36 px-2 py-2 font-medium">归属</th>
-                    <th class="w-20 px-2 py-2 text-right font-medium">CPU</th>
-                    <th class="w-32 px-2 py-2 text-right font-medium">内存</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="process in processes" :key="`${process.pid}-${process.command}`" class="border-b last:border-b-0">
-                    <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
-                    <td class="truncate px-2 py-2 text-gray-900" :title="process.command || '-'">{{ process.command || '-' }}</td>
-                    <td class="truncate px-2 py-2 text-gray-700" :title="process.user || '-'">{{ process.user || '-' }}</td>
-                    <td class="w-40 px-2 py-2">
-                      <div class="flex flex-wrap gap-1">
-                        <span
-                          v-for="group in visibleGroups(process.groups)"
-                          :key="group.id"
-                          :class="groupBadgeClass(group)"
-                        >
-                          {{ group.name }}
-                        </span>
-                        <span
-                          v-if="hasMoreGroups(process.groups)"
-                          class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200"
-                          :title="process.groups.map((group) => group.name).join('、')"
-                        >
-                          ...
-                        </span>
-                        <span v-if="!process.groups?.length" class="text-xs text-gray-400">未分组</span>
-                      </div>
-                    </td>
-                    <td class="w-36 px-2 py-2">
-                      <span
-                        :class="ownerBadgeClass(process)"
-                        :title="ownerLabel(process)"
-                      >
-                        {{ ownerLabel(process) }}
-                      </span>
-                    </td>
-                    <td class="px-2 py-2 text-right text-gray-900">{{ formatPercent(process.cpuPercent) }}</td>
-                    <td class="px-2 py-2 text-right text-gray-900">
-                      {{ formatBytes(process.memoryBytes) }}
-                      <span class="text-xs text-gray-500">({{ formatPercent(process.memoryPercent) }})</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div v-else class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-              暂无进程数据。
-            </div>
+            </button>
           </div>
+          <Transition name="process-list">
+            <div v-show="processViewMode !== 'collapsed'" class="process-list-shell border-t border-gray-200">
+              <div class="process-list-inner">
+                <div class="p-4">
+                  <Transition name="process-content" mode="out-in">
+                    <div
+                      v-if="processListLoading"
+                      key="loading"
+                      class="flex min-h-32 items-center justify-center rounded-md border border-gray-200 bg-gray-50"
+                    >
+                      <span class="h-6 w-6 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></span>
+                    </div>
+                    <div v-else-if="displayedProcesses.length" :key="processViewMode" class="overflow-x-auto">
+                      <table class="w-full min-w-[980px] table-fixed border-collapse text-sm">
+                        <thead>
+                          <tr class="border-b text-left text-xs text-gray-500">
+                            <th class="w-20 px-2 py-2 font-medium">PID</th>
+                            <th class="px-2 py-2 font-medium">进程</th>
+                            <th class="w-28 px-2 py-2 font-medium">用户</th>
+                            <th class="w-40 px-2 py-2 font-medium">分组</th>
+                            <th class="w-36 px-2 py-2 font-medium">归属</th>
+                            <th class="w-20 px-2 py-2 text-right font-medium">CPU</th>
+                            <th class="w-32 px-2 py-2 text-right font-medium">内存</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="process in displayedProcesses" :key="`${process.pid}-${process.command}`" class="border-b last:border-b-0">
+                            <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
+                            <td class="truncate px-2 py-2 text-gray-900" :title="process.command || '-'">{{ process.command || '-' }}</td>
+                            <td class="truncate px-2 py-2 text-gray-700" :title="process.user || '-'">{{ process.user || '-' }}</td>
+                            <td class="w-40 px-2 py-2">
+                              <div class="flex flex-wrap gap-1">
+                                <span
+                                  v-for="group in visibleGroups(process.groups)"
+                                  :key="group.id"
+                                  :class="groupBadgeClass(group)"
+                                >
+                                  {{ group.name }}
+                                </span>
+                                <span
+                                  v-if="hasMoreGroups(process.groups)"
+                                  class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200"
+                                  :title="process.groups.map((group) => group.name).join('、')"
+                                >
+                                  ...
+                                </span>
+                                <span v-if="!process.groups?.length" class="text-xs text-gray-400">未分组</span>
+                              </div>
+                            </td>
+                            <td class="w-36 px-2 py-2">
+                              <span
+                                :class="ownerBadgeClass(process)"
+                                :title="ownerLabel(process)"
+                              >
+                                {{ ownerLabel(process) }}
+                              </span>
+                            </td>
+                            <td class="px-2 py-2 text-right text-gray-900">{{ formatPercent(process.cpuPercent) }}</td>
+                            <td class="px-2 py-2 text-right text-gray-900">
+                              {{ formatBytes(process.memoryBytes) }}
+                              <span class="text-xs text-gray-500">({{ formatPercent(process.memoryPercent) }})</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div v-else key="empty" class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                      暂无进程数据。
+                    </div>
+                  </Transition>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </section>
       </div>
     </main>
@@ -321,10 +338,14 @@ const rangeOptions = [
   { label: '7d', value: '7d' },
   { label: '30d', value: '30d' },
 ]
+const PROCESS_PREVIEW_LIMIT = 40
+const processViewModeOrder = ['default', 'full', 'collapsed']
 
 const loading = ref(false)
 const error = ref('')
 const rangeKey = ref('1h')
+const processViewMode = ref('default')
+const processListLoading = ref(false)
 const metrics = ref({
   updatedAt: '',
   system: {},
@@ -345,6 +366,43 @@ const systemInfo = computed(() => metrics.value.system || {})
 const summary = computed(() => metrics.value.summary || {})
 const points = computed(() => metrics.value.points || [])
 const processes = computed(() => metrics.value.processes || [])
+const displayedProcesses = computed(() => {
+  if (processViewMode.value === 'collapsed') {
+    return []
+  }
+  if (processViewMode.value === 'full') {
+    return processes.value
+  }
+  return processes.value.slice(0, PROCESS_PREVIEW_LIMIT)
+})
+const processSubtitle = computed(() => {
+  const total = processes.value.length
+  if (processViewMode.value === 'collapsed') {
+    return `共 ${total} 个`
+  }
+  if (processViewMode.value === 'full') {
+    return `共 ${total} 个 · 已完全展开`
+  }
+  return `共 ${total} 个 · 显示前 ${Math.min(PROCESS_PREVIEW_LIMIT, total)} 条`
+})
+const processViewIconClass = computed(() => {
+  if (processViewMode.value === 'collapsed') {
+    return 'rotate-180'
+  }
+  if (processViewMode.value === 'full') {
+    return 'rotate-0'
+  }
+  return 'rotate-90'
+})
+const processViewToggleLabel = computed(() => {
+  if (processViewMode.value === 'collapsed') {
+    return '进程监控：收起'
+  }
+  if (processViewMode.value === 'full') {
+    return '进程监控：完全展开'
+  }
+  return '进程监控：40 条'
+})
 const memoryPercent = computed(() => {
   const total = Number(summary.value.memoryTotalBytes || 0)
   if (!total) return 0
@@ -428,6 +486,22 @@ const setRange = async (value) => {
 
 const toggleSection = (section) => {
   collapsedSections.value[section] = !collapsedSections.value[section]
+}
+
+const cycleProcessViewMode = async () => {
+  const currentIndex = processViewModeOrder.indexOf(processViewMode.value)
+  const nextMode = processViewModeOrder[(currentIndex + 1) % processViewModeOrder.length]
+  processViewMode.value = nextMode
+  if (nextMode !== 'full') {
+    return
+  }
+
+  processListLoading.value = true
+  try {
+    await loadMetrics()
+  } finally {
+    processListLoading.value = false
+  }
 }
 
 const toggleMemoryDetails = () => {
@@ -745,3 +819,41 @@ onBeforeUnmount(() => {
   }
 })
 </script>
+
+<style scoped>
+.process-list-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.process-list-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.process-list-enter-active,
+.process-list-leave-active {
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 160ms ease;
+}
+
+.process-list-enter-from,
+.process-list-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.process-content-enter-active,
+.process-content-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.process-content-enter-from,
+.process-content-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+</style>
