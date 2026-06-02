@@ -1,241 +1,186 @@
 # LabPanel
 
-LabPanel 是一个用于管理 FRP 客户端配置和 LXC 容器的面板项目。
+[English](README.en.md)
 
-后端使用 Go + Gin，前端使用 Vue 3 + Vite。项目支持：
+LabPanel 是一个为个人服务器、开发机和小型实验室环境准备的轻量管理面板。它把 FRP 客户端、LXC/LXD 容器、主机监控、GPU 监控和运维文档放进同一个 Web 界面，让一台服务器的常用维护工作不再散落在终端命令、配置文件和临时笔记里。
 
-- 查看和重载 `frpc` 服务状态
-- 管理 `frpc.toml` 中的代理映射
-- 管理 LXC/LXD 容器的创建、启动、停止、重启、删除
-- 在 FRP 或 LXC 未安装时，通过 `/api/check` 返回缺失项与安装引导
+它适合这样的场景：你有一台或几台 Linux 主机，需要经常调整内网穿透端口、创建测试容器、观察资源占用，或者给自己和团队留下一份随手可查的部署文档。
 
-## 环境要求
+## 为什么用 LabPanel
 
-- Linux
-- Go 1.21+
-- Node.js 18+
-- `pnpm`
-- `systemd`
+- 一个入口管理 FRP 和 LXC：常见操作直接在面板完成，减少反复登录服务器编辑文件。
+- 面向真实运维流程：服务状态、配置编辑、重载、环境检查、安装提示都在界面里串起来。
+- 轻量部署：Go 后端加 Vue 前端，构建后就是一个二进制和一份静态资源。
+- 对个人服务器友好：默认支持 systemd、`.env` 配置、脚本安装和脚本更新。
+- 密码不明文落盘：管理员密码使用 bcrypt 哈希存储，旧版明文配置会自动迁移。
 
-如果你要使用完整功能，还需要：
+## 功能概览
 
-- FRP 客户端 `frpc`
-- LXC/LXD
+### FRP 客户端管理
 
-## 目录结构
+- 查看 FRP 服务状态。
+- 编辑基础连接配置。
+- 管理 `frpc.toml` 中的代理映射。
+- 保存配置后重载服务。
+- FRP 未安装或配置缺失时显示检查结果和处理指引。
 
-- `main.go`: 后端入口
-- `handlers/`: HTTP 接口
-- `service/`: 业务逻辑
-- `frontend/`: Vue 前端
-- `config/`: 配置加载
-- `build.sh`: 一键构建脚本
+### LXC/LXD 容器管理
 
-## 一键安装
+- 创建、启动、停止、强制停止、重启、删除容器。
+- 修改容器配置和 root 密码。
+- 配置默认镜像和备份目录。
+- 容器分组管理。
+- 触发备份、查看备份状态、管理备份归档。
 
-脚本会自动安装 Go 和 pnpm，拉取/更新项目，编译前后端，并通过交互向导询问：
+### 监控和观察
 
-- LabPanel 访问端口
-- 管理员账号与密码
-- 是否需要配置 FRP
-- 使用已有 `frpc`，还是下载并安装新的 `frpc`
-- 新安装 FRP 时的安装目录，默认是当前执行目录下的 `frp`
+- 主机 CPU、内存、磁盘、网络和进程信息。
+- LXC 容器资源指标。
+- NVIDIA GPU 使用率、显存、温度和进程占用。
+- 监控数据使用本地 SQLite 存储，并支持保留天数配置。
 
-如果选择使用已有 `frpc`，脚本会提醒你确认 `frpc.toml` 已启用 `[webServer]`，否则面板无法热重载 FRP。安装完成后，脚本会汇总输出访问地址、账号密码、FRP 路径、配置路径和 service 信息。
+### 文档和系统设置
 
-推荐在服务器上执行：
+- 在面板内维护 Markdown 文档。
+- 支持文档图片上传。
+- 在线修改系统标题。
+- 在线修改管理员账号和密码。
+
+## 技术栈
+
+- 后端：Go、Gin、JWT、SQLite
+- 前端：Vue 3、Vite、Tailwind CSS
+- 配置：`.env`、systemd、FRP TOML
+- 运行环境：Linux、systemd、FRP、LXC/LXD
+
+## 快速开始
+
+推荐使用安装脚本，它会拉取代码、安装必要依赖、构建前后端，并创建 systemd 服务。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/WiDayn/LabPanel/main/install.sh -o install.sh
 sudo bash install.sh
 ```
 
-如果需要通过 GitHub 镜像下载安装脚本：
+如果访问 GitHub 较慢，可以使用代理前缀：
 
 ```bash
 curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/WiDayn/LabPanel/main/install.sh -o install.sh
 sudo GITHUB_PROXY=https://gh-proxy.com/ bash install.sh
 ```
 
-如果你已经克隆了本仓库，也可以直接运行：
+已经克隆仓库时：
 
 ```bash
 sudo ./install.sh
 ```
 
-常用安装参数可以通过环境变量传入：
+安装向导会询问访问端口、面板标题、管理员账号密码，以及是否配置 FRP。
+
+默认登录信息：
+
+```text
+用户名：admin
+密码：admin
+```
+
+首次部署后请在“系统设置”里修改账号密码，并更换 `.env` 中的 `JWT_SECRET`。
+
+## 非交互安装示例
 
 ```bash
 sudo REPO_URL=https://github.com/WiDayn/LabPanel.git \
   INSTALL_DIR=/opt/LabPanel \
   PORT=8080 \
+  APP_TITLE="LabPanel 管理面板" \
   ADMIN_USERNAME=admin \
   ADMIN_PASSWORD=change-me \
-  GITHUB_PROXY=https://gh-proxy.com/ \
-  HTTPS_PROXY=http://127.0.0.1:7890 \
   USE_FRP=y \
   FRP_MODE=install \
-  FRP_INSTALL_DIR="$PWD/frp" \
   FRP_SERVER_ADDR=your-frps.example.com \
   FRP_SERVER_PORT=7000 \
   FRP_AUTH_TOKEN=your-token \
   ./install.sh
 ```
 
-默认会创建：
+常见安装结果：
 
-- `labpanel.service`: 启动 LabPanel
-- `frpc.service`: 启动 FRP 客户端，只有选择配置 FRP 时创建
-- `/opt/LabPanel/.env`: LabPanel 运行配置
-- `<FRP_INSTALL_DIR>/frpc.toml`: 新安装 FRP 时生成的客户端配置
-
-如果暂时不想启动服务：
-
-```bash
-sudo START_SERVICES=0 ./install.sh
-```
-
-使用已有 `frpc` 的非交互示例：
-
-```bash
-sudo USE_FRP=y \
-  FRP_MODE=custom \
-  FRPC_PATH=/usr/local/bin/frpc \
-  FRP_CONFIG_PATH=/etc/frp/frpc.toml \
-  ./install.sh
-```
-
-不配置 FRP：
-
-```bash
-sudo USE_FRP=n ./install.sh
-```
+- `/opt/LabPanel/LabPanel`
+- `/opt/LabPanel/.env`
+- `lab-panel.service`
+- 如果选择配置 FRP，还会创建或复用 `frpc`、`frpc.toml` 和 `frpc.service`
 
 ## 更新
 
-更新脚本会停止 `labpanel` 和 `frpc`，执行 `git pull --ff-only`，重新编译前后端，然后启动服务：
+在安装目录运行：
 
 ```bash
 cd /opt/LabPanel
-sudo ./update.sh
+./update.sh
 ```
 
-如果你的 service 名称不同：
+更新脚本会停止服务、拉取最新代码、重新构建并启动服务。推荐使用普通用户运行；脚本会在需要控制 systemd 时自动调用 `sudo`。
+
+如果服务名不同：
 
 ```bash
-sudo APP_SERVICE=labpanel FRP_SERVICE=frpc ./update.sh
+APP_SERVICE=lab-panel FRP_SERVICE=frpc ./update.sh
 ```
 
-如果服务器访问 GitHub 较慢，可以在 `.env` 中设置，或临时通过命令行传入：
+如果服务器访问 GitHub 较慢：
 
 ```bash
-sudo GITHUB_PROXY=https://gh-proxy.com/ HTTPS_PROXY=http://127.0.0.1:7890 ./update.sh
+GITHUB_PROXY=https://gh-proxy.com/ HTTPS_PROXY=http://127.0.0.1:7890 ./update.sh
 ```
 
-## 快速开始
+## 配置
 
-### 1. 安装基础依赖
-
-Ubuntu / Debian:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y golang nodejs npm
-sudo npm install -g pnpm
-```
-
-CentOS / Rocky / AlmaLinux / Fedora:
-
-```bash
-sudo dnf install -y golang nodejs npm
-sudo npm install -g pnpm
-```
-
-### 2. 克隆并安装前端依赖
-
-```bash
-git clone <your-repo-url>
-cd LabPanel
-cd frontend
-pnpm install
-cd ..
-```
-
-### 3. 配置环境变量
-
-项目支持 `.env` 文件。可以在仓库根目录创建：
+LabPanel 从环境变量和项目根目录的 `.env` 加载配置。可以复制 `.env.example` 后按需修改。
 
 ```env
 PORT=8080
 APP_TITLE="LabPanel 管理面板"
-JWT_SECRET=change-me
+JWT_SECRET=your-secret-key-change-in-production
+
 ADMIN_USERNAME=admin
 ADMIN_HASHED_PASSWORD="\$2a\$10\$6DCHyW8VUR/0WV8RwtIRDuHlpK26WKHTVark3IWtTl3djv4oNkoIW"
 
-APP_SERVICE=labpanel
+APP_SERVICE=lab-panel
 FRP_SERVICE=frpc
-GITHUB_PROXY=
-HTTP_PROXY=
-HTTPS_PROXY=
-ALL_PROXY=
-NO_PROXY=
 TOML_PATH=/etc/frp/frpc.toml
 FRPC_PATH=/usr/local/bin/frpc
 
 DOCS_PATH=./docs
 UPLOAD_PATH=./uploads
+LXC_BACKUP_DIR=./backups
+LXC_GROUPS_PATH=./lxc_groups.json
+METRICS_DB_PATH=./data/metrics.db
+METRICS_RETENTION_DAYS=30
 LXC_IMAGE=ubuntu:22.04
 ```
 
-说明：
+重要配置项：
 
-- `PORT`: 后端监听端口
-- `APP_TITLE`: 面板标题，同时用于浏览器 title 和顶部标题
-- `JWT_SECRET`: 登录签名密钥
-- `ADMIN_USERNAME`: 面板登录用户名
-- `ADMIN_HASHED_PASSWORD`: 面板登录密码的 bcrypt 哈希。旧版 `.env` 中的 `ADMIN_PASSWORD` 会在启动时自动迁移为哈希并删除明文项。
-- `APP_SERVICE`: `systemd` 中的 LabPanel 服务名
-- `FRP_SERVICE`: `systemd` 中的 FRP 服务名
-- `GITHUB_PROXY`: GitHub 镜像前缀，例如 `https://gh-proxy.com/`
-- `HTTP_PROXY` / `HTTPS_PROXY`: 安装和更新时使用的 HTTP(S) 代理
-- `TOML_PATH`: `frpc.toml` 配置文件路径
-- `FRPC_PATH`: `frpc` 可执行文件路径
-- `DOCS_PATH`: 文档目录
-- `UPLOAD_PATH`: 上传目录
-- `LXC_IMAGE`: 新建 LXC 容器时使用的默认镜像
+- `APP_TITLE`: 浏览器标题和面板顶部标题。
+- `JWT_SECRET`: 登录令牌签名密钥，生产环境必须修改。
+- `ADMIN_USERNAME`: 管理员用户名。
+- `ADMIN_HASHED_PASSWORD`: 管理员密码的 bcrypt 哈希。
+- `TOML_PATH`: `frpc.toml` 路径。
+- `FRPC_PATH`: `frpc` 可执行文件路径。
+- `LXC_IMAGE`: 创建容器时使用的默认镜像。
+- `METRICS_RETENTION_DAYS`: 监控数据保留天数，`0` 表示不自动清理。
 
-如果没有设置 `.env`，程序会使用默认值。
+旧版 `.env` 如果仍包含 `ADMIN_PASSWORD`，LabPanel 启动时会自动生成 `ADMIN_HASHED_PASSWORD` 并删除明文密码。
 
-## 安装 FRP
-
-LabPanel 依赖以下 FRP 组件：
-
-- `frpc` 可执行文件
-- `frpc.toml` 配置文件
-- `systemd` 服务
-
-### Ubuntu / Debian 示例
+手动生成密码哈希：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y curl tar
-sudo mkdir -p /etc/frp
+./LabPanel hash-password 'your-new-password'
 ```
 
-下载官方 `frp` 发布包后，将 `frpc` 安装到系统路径：
+## FRP 要求
 
-```bash
-sudo cp frpc /usr/local/bin/frpc
-sudo chmod +x /usr/local/bin/frpc
-```
-
-创建配置文件：
-
-```bash
-sudo editor /etc/frp/frpc.toml
-```
-
-示例配置：
+LabPanel 需要能访问 `frpc` 可执行文件、`frpc.toml` 配置文件和对应 systemd 服务。为了让面板保存配置后可以热重载 FRP，推荐在 `frpc.toml` 中启用本地 webServer：
 
 ```toml
 serverAddr = "your-frps.example.com"
@@ -249,209 +194,117 @@ addr = "127.0.0.1"
 port = 7400
 ```
 
-创建 `systemd` 服务：
+## LXC/LXD 要求
 
-```bash
-sudo editor /etc/systemd/system/frpc.service
-```
+服务器需要安装并初始化 LXD，运行 LabPanel 的用户需要有权限执行 `lxc` 命令。
 
-示例服务文件：
-
-```ini
-[Unit]
-Description=FRP Client
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/frpc -c /etc/frp/frpc.toml
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用并启动：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now frpc
-sudo systemctl status frpc --no-pager
-```
-
-## 安装 LXC / LXD
-
-### Ubuntu / Debian
-
-很多较新的 Ubuntu / Debian 环境里，`lxd` 和 `lxd-client` 已经不能直接通过 `apt install` 获取。推荐使用官方文档当前主推的 `snap` 安装方式。
-
-先安装 `snapd`：
+Ubuntu/Debian 示例：
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y snapd
-```
-
-再安装 LXD：
-
-```bash
 sudo snap install lxd
 sudo lxd init --auto
-```
-
-给当前用户授予访问权限：
-
-```bash
 getent group lxd | grep -qwF "$USER" || sudo usermod -aG lxd "$USER"
 newgrp lxd
 ```
 
-安装完成后确认：
-
-```bash
-lxc version
-```
-
-### 其他发行版
-
-请按当前发行版安装 `lxc` 或 `lxd`，并确保：
-
-- `lxc` 命令可直接执行
-- LXD 服务已初始化
-
-## 开发运行
-
-### 启动后端
-
-```bash
-go run main.go
-```
-
-默认监听：
-
-```text
-http://127.0.0.1:8080
-```
-
-### 启动前端开发服务器
-
-```bash
-cd frontend
-pnpm dev
-```
-
-## 构建
-
-项目自带构建脚本：
-
-```bash
-chmod +x build.sh
-./build.sh
-```
-
-构建完成后会生成：
-
-- `./LabPanel`: 后端可执行文件
-- `./frontend/dist`: 前端静态文件
-
-也可以手动构建：
-
-```bash
-cd frontend
-pnpm install
-pnpm build
-cd ..
-go mod download
-go build -o LabPanel main.go
-```
-
-## 运行检查机制
-
-后端提供：
-
-```text
-GET /api/check
-```
-
-该接口会检查：
-
-- FRP 是否已安装
-- `frpc.toml` 是否存在
-- FRP 的 `systemd` 服务是否存在
-- `lxc` 命令是否可用
-
-当前端检测到 FRP 或 LXC 未就绪时，会直接展示安装指引，而不是只显示命令执行失败的报错。
-
-## 登录
-
-默认登录信息：
-
-```text
-用户名：admin
-密码：admin
-```
-
-生产环境请务必修改：
-
-- `ADMIN_USERNAME`
-- `ADMIN_HASHED_PASSWORD`
-- `JWT_SECRET`
-
-## 常见问题
-
-### 1. 页面提示 FRP 未就绪
-
-请检查：
-
-- `FRPC_PATH` 是否正确
-- `TOML_PATH` 指向的配置文件是否存在
-- `FRP_SERVICE` 对应的服务是否已创建
-
-可手动验证：
-
-```bash
-/usr/local/bin/frpc verify -c /etc/frp/frpc.toml
-systemctl status frpc --no-pager
-```
-
-### 2. 页面提示 LXC 未就绪
-
-请检查：
-
-- `lxc` 命令是否存在
-- `lxd` 是否已初始化
-
-可手动验证：
+检查：
 
 ```bash
 lxc version
 lxc list
 ```
 
-如果你在安装阶段看到下面这种错误：
+## 本地开发
+
+```bash
+git clone https://github.com/WiDayn/LabPanel.git
+cd LabPanel
+cd frontend
+pnpm install
+pnpm dev
+```
+
+另开一个终端启动后端：
+
+```bash
+go run main.go
+```
+
+构建生产版本：
+
+```bash
+./build.sh
+```
+
+构建产物：
+
+- `./LabPanel`
+- `./frontend/dist`
+
+## 常见问题
+
+### pnpm 提示 Node.js 版本过低
+
+Node.js 18 推荐使用 pnpm 9：
+
+```bash
+sudo npm install -g pnpm@9.15.9
+```
+
+如果你使用 nvm 管理 Node，更推荐直接运行 `./update.sh`，不要用 `sudo ./update.sh`，这样构建阶段会使用当前用户的 Node 和 pnpm。
+
+### pnpm 提示 `packages field missing or empty`
+
+确认 `frontend/pnpm-workspace.yaml` 包含：
+
+```yaml
+packages:
+  - "."
+
+allowBuilds:
+  esbuild: false
+```
+
+### 前端构建时无法删除 `frontend/dist`
+
+通常是旧构建产物属于 root：
+
+```bash
+sudo chown -R "$USER:$USER" frontend/dist
+```
+
+### 页面提示 FRP 未就绪
+
+检查 `.env` 中的 `FRPC_PATH`、`TOML_PATH`、`FRP_SERVICE`，并验证：
+
+```bash
+/usr/local/bin/frpc verify -c /etc/frp/frpc.toml
+systemctl status frpc --no-pager
+```
+
+### 页面提示 LXC 未就绪
+
+检查 LXD 是否初始化、当前用户是否属于 `lxd` 组：
+
+```bash
+lxc version
+lxc list
+```
+
+## 目录结构
 
 ```text
-E: 软件包 lxd 没有可安装候选
-E: 无法定位软件包 lxd-client
+.
+├── config/      # 配置加载和 .env 迁移
+├── handlers/    # HTTP API
+├── service/     # FRP、LXC、监控、文档等业务逻辑
+├── models/      # 请求和响应模型
+├── middleware/  # 鉴权中间件
+├── frontend/    # Vue 3 前端
+├── docs/        # 默认文档目录
+├── build.sh     # 构建脚本
+├── install.sh   # 安装脚本
+└── update.sh    # 更新脚本
 ```
-
-通常表示当前发行版的软件源不再提供旧的 `apt` 包。请改用：
-
-```bash
-sudo apt-get install -y snapd
-sudo snap install lxd
-sudo lxd init --auto
-```
-
-### 3. 构建失败，提示没有 `pnpm`
-
-安装命令：
-
-```bash
-npm install -g pnpm
-```
-
-## 许可证
-
-如果你准备开源，可以在这里补充许可证说明。
