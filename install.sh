@@ -6,7 +6,9 @@ APP_NAME="${APP_NAME:-LabPanel}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/LabPanel}"
 REPO_URL="${REPO_URL:-}"
 GITHUB_PROXY="${GITHUB_PROXY:-}"
-APP_SERVICE="${APP_SERVICE:-labpanel}"
+DEFAULT_GITHUB_PROXY="${DEFAULT_GITHUB_PROXY:-https://gh-proxy.com/}"
+SELECTED_GITHUB_PROXY=""
+APP_SERVICE="${APP_SERVICE:-lab-panel}"
 FRP_SERVICE="${FRP_SERVICE:-frpc}"
 FRP_VERSION="${FRP_VERSION:-latest}"
 GO_VERSION="${GO_VERSION:-1.22.12}"
@@ -112,13 +114,93 @@ normalize_url_prefix() {
     echo "$prefix"
 }
 
+is_disabled_value() {
+    case "${1:-}" in
+        0|off|OFF|no|NO|none|NONE|false|FALSE) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+github_probe_url() {
+    local proxy_prefix url
+    proxy_prefix="$1"
+    url="https://github.com/WiDayn/LabPanel.git"
+    if [ -n "$proxy_prefix" ]; then
+        echo "${proxy_prefix}${url}"
+    else
+        echo "$url"
+    fi
+}
+
+now_ms() {
+    local now
+    now="$(date +%s%3N 2>/dev/null || true)"
+    case "$now" in
+        *N*|"") echo "$(date +%s)000" ;;
+        *) echo "$now" ;;
+    esac
+}
+
+measure_github_route() {
+    local proxy_prefix url start end
+    proxy_prefix="$1"
+    url="$(github_probe_url "$proxy_prefix")"
+    start="$(now_ms)"
+    if command -v timeout >/dev/null 2>&1; then
+        GIT_TERMINAL_PROMPT=0 timeout 10 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=8 ls-remote --heads "$url" main >/dev/null 2>&1 || return 0
+    else
+        GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=8 ls-remote --heads "$url" main >/dev/null 2>&1 || return 0
+    fi
+    end="$(now_ms)"
+    awk "BEGIN {printf \"%.3f\", ($end - $start) / 1000}"
+}
+
+select_github_route() {
+    local proxy_candidate direct_time proxy_time chosen
+    SELECTED_GITHUB_PROXY=""
+
+    if is_disabled_value "$GITHUB_PROXY"; then
+        log "GitHub 线路: 已禁用代理，使用直连"
+        return
+    fi
+
+    proxy_candidate="$(normalize_url_prefix "${GITHUB_PROXY:-$DEFAULT_GITHUB_PROXY}")"
+    [ -n "$proxy_candidate" ] || return
+
+    if ! command -v git >/dev/null 2>&1; then
+        SELECTED_GITHUB_PROXY="$proxy_candidate"
+        log "git 不可用，暂用 GitHub 代理候选: ${proxy_candidate}"
+        return
+    fi
+
+    direct_time="$(measure_github_route "")"
+    proxy_time="$(measure_github_route "$proxy_candidate")"
+
+    if [ -n "$direct_time" ] && [ -n "$proxy_time" ]; then
+        if awk "BEGIN {exit !($proxy_time < $direct_time)}"; then
+            SELECTED_GITHUB_PROXY="$proxy_candidate"
+            chosen="代理"
+        else
+            chosen="直连"
+        fi
+        log "GitHub 线路测速: 直连 ${direct_time}s，代理 ${proxy_time}s，使用${chosen}"
+    elif [ -n "$proxy_time" ]; then
+        SELECTED_GITHUB_PROXY="$proxy_candidate"
+        log "GitHub 直连不可用，使用代理 ${proxy_candidate}"
+    elif [ -n "$direct_time" ]; then
+        log "GitHub 代理不可用，使用直连"
+    else
+        log "GitHub 线路测速失败，默认使用直连"
+    fi
+}
+
 apply_github_proxy() {
     local url
     url="$1"
-    if [ -n "$GITHUB_PROXY" ]; then
+    if [ -n "$SELECTED_GITHUB_PROXY" ]; then
         case "$url" in
             https://github.com/*|https://api.github.com/*|https://raw.githubusercontent.com/*)
-                echo "${GITHUB_PROXY}${url}"
+                echo "${SELECTED_GITHUB_PROXY}${url}"
                 return
                 ;;
         esac
@@ -127,7 +209,9 @@ apply_github_proxy() {
 }
 
 configure_network() {
-    GITHUB_PROXY="$(normalize_url_prefix "$GITHUB_PROXY")"
+    if ! is_disabled_value "$GITHUB_PROXY"; then
+        GITHUB_PROXY="$(normalize_url_prefix "$GITHUB_PROXY")"
+    fi
 
     if [ -n "$HTTP_PROXY" ]; then
         export HTTP_PROXY="$HTTP_PROXY" http_proxy="$HTTP_PROXY"
@@ -144,13 +228,15 @@ configure_network() {
 }
 
 git_cmd() {
-    if [ -n "$GITHUB_PROXY" ]; then
+    if [ -n "$SELECTED_GITHUB_PROXY" ]; then
         git \
-            -c "url.${GITHUB_PROXY}https://github.com/.insteadOf=https://github.com/" \
-            -c "url.${GITHUB_PROXY}https://github.com/.insteadOf=git@github.com:" \
+            -c "url.${SELECTED_GITHUB_PROXY}https://github.com/.insteadOf=https://github.com/" \
+            -c "url.${SELECTED_GITHUB_PROXY}https://github.com/.insteadOf=git@github.com:" \
             "$@"
     else
-        git "$@"
+        git \
+            -c "url.https://github.com/.insteadOf=git@github.com:" \
+            "$@"
     fi
 }
 
@@ -565,6 +651,7 @@ main() {
     APP_SERVICE="$(normalize_service_name "$APP_SERVICE")"
     FRP_SERVICE="$(normalize_service_name "$FRP_SERVICE")"
     install_base_packages
+    select_github_route
     install_go
     install_pnpm
     prepare_source

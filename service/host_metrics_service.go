@@ -18,7 +18,6 @@ const (
 	hostMetricsSampleInterval = time.Minute
 	hostMetricsRetention      = 30 * 24 * time.Hour
 	hostMetricsMaxPoints      = 240
-	hostProcessLimit          = 40
 )
 
 type HostMetricsService struct {
@@ -839,9 +838,10 @@ func collectHostProcesses() []models.HostProcess {
 		return []models.HostProcess{}
 	}
 
-	processes := make([]models.HostProcess, 0, hostProcessLimit)
+	lines := nonEmptyLines(string(output))
+	processes := make([]models.HostProcess, 0, len(lines))
 	groupsByContainer, _ := NewLxcGroupService().GroupsByContainer()
-	for _, line := range nonEmptyLines(string(output)) {
+	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) < 6 {
 			continue
@@ -866,9 +866,6 @@ func collectHostProcesses() []models.HostProcess {
 			ContainerName: containerName,
 			Groups:        groups,
 		})
-		if len(processes) >= hostProcessLimit {
-			break
-		}
 	}
 
 	sort.SliceStable(processes, func(i, j int) bool {
