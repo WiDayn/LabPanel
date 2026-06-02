@@ -170,7 +170,7 @@ PORT=8080
 APP_TITLE="LabPanel 管理面板"
 JWT_SECRET=change-me
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
+ADMIN_HASHED_PASSWORD="\$2a\$10\$6DCHyW8VUR/0WV8RwtIRDuHlpK26WKHTVark3IWtTl3djv4oNkoIW"
 
 APP_SERVICE=labpanel
 FRP_SERVICE=frpc
@@ -193,7 +193,7 @@ LXC_IMAGE=ubuntu:22.04
 - `APP_TITLE`: 面板标题，同时用于浏览器 title 和顶部标题
 - `JWT_SECRET`: 登录签名密钥
 - `ADMIN_USERNAME`: 面板登录用户名
-- `ADMIN_PASSWORD`: 面板登录密码
+- `ADMIN_HASHED_PASSWORD`: 面板登录密码的 bcrypt 哈希。旧版 `.env` 中的 `ADMIN_PASSWORD` 会在启动时自动迁移为哈希并删除明文项。
 - `APP_SERVICE`: `systemd` 中的 LabPanel 服务名
 - `FRP_SERVICE`: `systemd` 中的 FRP 服务名
 - `GITHUB_PROXY`: GitHub 镜像前缀，例如 `https://gh-proxy.com/`
@@ -389,13 +389,13 @@ GET /api/check
 
 ```text
 用户名：admin
-密码：admin123
+密码：admin
 ```
 
 生产环境请务必修改：
 
 - `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
+- `ADMIN_HASHED_PASSWORD`
 - `JWT_SECRET`
 
 ## 常见问题

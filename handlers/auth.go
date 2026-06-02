@@ -18,7 +18,7 @@ func Login(c *gin.Context) {
 	}
 
 	cfg, _ := config.Load()
-	if req.Username != cfg.AdminUsername || req.Password != cfg.AdminPassword {
+	if req.Username != cfg.AdminUsername || !config.VerifyPassword(cfg.AdminHashedPassword, req.Password) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
@@ -37,4 +37,3 @@ func Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.LoginResponse{Token: tokenString})
 }
-
