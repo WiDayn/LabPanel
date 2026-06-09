@@ -12,6 +12,7 @@ HTTPS_PROXY_OVERRIDE="${HTTPS_PROXY-}"
 ALL_PROXY_OVERRIDE="${ALL_PROXY-}"
 NO_PROXY_OVERRIDE="${NO_PROXY-}"
 GIT_TRANSPORT_OVERRIDE="${GIT_TRANSPORT-}"
+GITHUB_ROUTE_OVERRIDE="${GITHUB_ROUTE-}"
 RUN_USER=""
 SELECTED_GITHUB_PROXY=""
 
@@ -92,6 +93,23 @@ select_github_route() {
 
     proxy_candidate="$(normalize_url_prefix "${GITHUB_PROXY:-$DEFAULT_GITHUB_PROXY}")"
     [ -n "$proxy_candidate" ] || return
+
+    case "$GITHUB_ROUTE" in
+        github)
+            log "GitHub 线路: 使用 GitHub 直连"
+            return
+            ;;
+        gh-proxy)
+            SELECTED_GITHUB_PROXY="$proxy_candidate"
+            log "GitHub 线路: 使用代理 ${proxy_candidate}"
+            return
+            ;;
+        auto|"")
+            ;;
+        *)
+            log "GitHub 线路: 未知 GITHUB_ROUTE=${GITHUB_ROUTE}，使用自动测速"
+            ;;
+    esac
 
     if ! command -v git >/dev/null 2>&1; then
         SELECTED_GITHUB_PROXY="$proxy_candidate"
@@ -176,6 +194,7 @@ load_env() {
     ALL_PROXY="${ALL_PROXY_OVERRIDE:-${ALL_PROXY:-${all_proxy:-}}}"
     NO_PROXY="${NO_PROXY_OVERRIDE:-${NO_PROXY:-${no_proxy:-}}}"
     GIT_TRANSPORT="${GIT_TRANSPORT_OVERRIDE:-${GIT_TRANSPORT:-https}}"
+    GITHUB_ROUTE="${GITHUB_ROUTE_OVERRIDE:-${GITHUB_ROUTE:-auto}}"
 }
 
 configure_network() {

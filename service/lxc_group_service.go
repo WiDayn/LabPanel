@@ -31,6 +31,11 @@ var (
 	}
 )
 
+const (
+	defaultLxcGroupsPath = "./data/lxc_groups.json"
+	legacyLxcGroupsPath  = "./lxc_groups.json"
+)
+
 type LxcGroupService struct {
 	path string
 }
@@ -42,7 +47,7 @@ type lxcGroupStore struct {
 
 func NewLxcGroupService() *LxcGroupService {
 	cfg, _ := config.Load()
-	path := "./lxc_groups.json"
+	path := defaultLxcGroupsPath
 	if cfg != nil && strings.TrimSpace(cfg.LxcGroupsPath) != "" {
 		path = strings.TrimSpace(cfg.LxcGroupsPath)
 	}
@@ -181,18 +186,59 @@ func (s *LxcGroupService) GroupsByContainer() (map[string][]models.LxcGroup, err
 }
 
 func (s *LxcGroupService) loadLocked() (lxcGroupStore, error) {
-	store := lxcGroupStore{
-		Groups:          []models.LxcGroup{},
-		ContainerGroups: map[string][]string{},
-	}
+	store := newLxcGroupStore()
 
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if legacyStore, migrated, migrateErr := s.loadLegacyLocked(); migrateErr != nil {
+				return store, migrateErr
+			} else if migrated {
+				return legacyStore, nil
+			}
 			return store, nil
 		}
 		return store, fmt.Errorf("读取 LXC 分组失败: %v", err)
 	}
+	return parseLxcGroupStore(data)
+}
+
+func (s *LxcGroupService) loadLegacyLocked() (lxcGroupStore, bool, error) {
+	store := newLxcGroupStore()
+	if filepath.Clean(s.path) != filepath.Clean(defaultLxcGroupsPath) {
+		return store, false, nil
+	}
+
+	data, err := os.ReadFile(legacyLxcGroupsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return store, false, nil
+		}
+		return store, false, fmt.Errorf("读取旧 LXC 分组失败: %v", err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return store, false, nil
+	}
+
+	store, err = parseLxcGroupStore(data)
+	if err != nil {
+		return store, false, fmt.Errorf("解析旧 LXC 分组失败: %v", err)
+	}
+	if err := s.saveLocked(store); err != nil {
+		return store, false, fmt.Errorf("迁移旧 LXC 分组失败: %v", err)
+	}
+	return store, true, nil
+}
+
+func newLxcGroupStore() lxcGroupStore {
+	return lxcGroupStore{
+		Groups:          []models.LxcGroup{},
+		ContainerGroups: map[string][]string{},
+	}
+}
+
+func parseLxcGroupStore(data []byte) (lxcGroupStore, error) {
+	store := newLxcGroupStore()
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return store, nil
 	}

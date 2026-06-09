@@ -88,7 +88,12 @@ go mod tidy
 # 构建可执行文件
 echo "编译 Go 程序..."
 GOARCH_VALUE="${GOARCH:-$(go env GOARCH)}"
-CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build -ldflags="-w -s" -o LabPanel main.go
+APP_VERSION="${APP_VERSION:-$(node -e "console.log(require('./frontend/package.json').version)" 2>/dev/null || echo "1.0.0")}"
+APP_COMMIT="${APP_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo "unknown")}"
+APP_COMMIT_DATE="${APP_COMMIT_DATE:-$(git show -s --format=%cs HEAD 2>/dev/null || date +%F)}"
+CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build \
+    -ldflags="-w -s -X LabPanel/service.AppVersion=${APP_VERSION} -X LabPanel/service.AppCommit=${APP_COMMIT} -X LabPanel/service.AppCommitDate=${APP_COMMIT_DATE}" \
+    -o LabPanel main.go
 
 if [ ! -f "LabPanel" ]; then
     echo "错误: 后端构建失败"

@@ -13,6 +13,13 @@ type PublicConfigResponse struct {
 	Title string `json:"title"`
 }
 
+type AppVersionResponse struct {
+	Version    string `json:"version"`
+	Commit     string `json:"commit"`
+	CommitDate string `json:"commitDate"`
+	Display    string `json:"display"`
+}
+
 type SystemSettingsResponse struct {
 	Title    string `json:"title"`
 	Username string `json:"username"`
@@ -26,6 +33,26 @@ type AdminAccountUpdateRequest struct {
 	Username        string `json:"username" binding:"required"`
 	CurrentPassword string `json:"currentPassword" binding:"required"`
 	NewPassword     string `json:"newPassword"`
+}
+
+type SystemUpdateRequest struct {
+	Source string `json:"source"`
+}
+
+type SystemUpdateCheckResponse struct {
+	Source            string             `json:"source"`
+	Current           AppVersionResponse `json:"current"`
+	Branch            string             `json:"branch"`
+	RemoteCommit      string             `json:"remoteCommit"`
+	RemoteCommitShort string             `json:"remoteCommitShort"`
+	HasUpdate         bool               `json:"hasUpdate"`
+	Message           string             `json:"message"`
+}
+
+type SystemUpdateApplyResponse struct {
+	Source  string `json:"source"`
+	Command string `json:"command"`
+	Message string `json:"message"`
 }
 
 type ConfigResponse struct {

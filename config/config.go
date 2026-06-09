@@ -59,7 +59,7 @@ func Load() (*Config, error) {
 		UploadPath:           getEnv("UPLOAD_PATH", "./uploads"),
 		LxcImage:             getEnv("LXC_IMAGE", "ubuntu:22.04"),
 		LxcBackupDir:         getEnv("LXC_BACKUP_DIR", "./backups"),
-		LxcGroupsPath:        getEnv("LXC_GROUPS_PATH", "./lxc_groups.json"),
+		LxcGroupsPath:        getEnv("LXC_GROUPS_PATH", "./data/lxc_groups.json"),
 		MetricsDBPath:        getEnv("METRICS_DB_PATH", "./data/metrics.db"),
 		MetricsRetentionDays: getEnvInt("METRICS_RETENTION_DAYS", 30),
 	}

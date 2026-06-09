@@ -62,6 +62,52 @@
           </div>
         </form>
       </Card>
+
+      <Card class="p-6">
+        <div class="pb-4 border-b">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900">系统更新</h2>
+              <p class="mt-1 text-sm text-gray-500">当前版本 {{ versionDisplay || '加载中' }}</p>
+            </div>
+
+            <div class="inline-flex w-fit rounded-md border bg-white p-1">
+              <button
+                v-for="option in updateSources"
+                :key="option.value"
+                type="button"
+                class="h-8 px-3 text-sm font-medium rounded transition-colors"
+                :class="updateSource === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                @click="updateSource = option.value"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="py-4 grid gap-4 sm:grid-cols-2">
+          <div class="rounded-md border bg-gray-50 p-4">
+            <div class="text-sm text-gray-500">当前 Commit</div>
+            <div class="mt-1 font-medium text-gray-900">{{ versionInfo.commit || '-' }}</div>
+          </div>
+          <div class="rounded-md border bg-gray-50 p-4">
+            <div class="text-sm text-gray-500">远端 Commit</div>
+            <div class="mt-1 font-medium text-gray-900">{{ updateCheck?.remoteCommitShort || '-' }}</div>
+          </div>
+        </div>
+
+        <div v-if="updateMessage" :class="updateMessageClass">{{ updateMessage }}</div>
+
+        <div class="mt-4 flex flex-wrap justify-end gap-3">
+          <Button variant="outline" :disabled="checkingUpdate || applyingUpdate" @click="checkUpdate">
+            {{ checkingUpdate ? '检查中...' : '检查更新' }}
+          </Button>
+          <Button :disabled="applyingUpdate" @click="applyUpdate">
+            {{ applyingUpdate ? '启动中...' : '开始更新' }}
+          </Button>
+        </div>
+      </Card>
     </main>
   </div>
 </template>
@@ -85,10 +131,22 @@ const accountForm = ref({
 
 const savingTitle = ref(false)
 const savingAccount = ref(false)
+const checkingUpdate = ref(false)
+const applyingUpdate = ref(false)
 const titleMessage = ref('')
 const titleMessageType = ref('success')
 const accountMessage = ref('')
 const accountMessageType = ref('success')
+const updateMessage = ref('')
+const updateMessageType = ref('success')
+const versionInfo = ref({})
+const updateCheck = ref(null)
+const updateSource = ref('github')
+
+const updateSources = [
+  { label: 'GitHub', value: 'github' },
+  { label: 'gh-proxy.com', value: 'gh-proxy' },
+]
 
 const titleMessageClass = computed(() =>
   titleMessageType.value === 'success' ? 'text-sm text-green-600' : 'text-sm text-red-500'
@@ -96,11 +154,20 @@ const titleMessageClass = computed(() =>
 const accountMessageClass = computed(() =>
   accountMessageType.value === 'success' ? 'text-sm text-green-600' : 'text-sm text-red-500'
 )
+const updateMessageClass = computed(() =>
+  updateMessageType.value === 'success' ? 'text-sm text-green-600' : 'text-sm text-red-500'
+)
+const versionDisplay = computed(() => versionInfo.value.display || '')
 
 const loadSettings = async () => {
   const response = await api.get('/system-settings')
   titleForm.value.title = response.data.title || ''
   accountForm.value.username = response.data.username || ''
+}
+
+const loadVersion = async () => {
+  const response = await api.get('/version')
+  versionInfo.value = response.data || {}
 }
 
 const saveTitle = async () => {
@@ -165,10 +232,45 @@ const saveAccount = async () => {
   }
 }
 
+const checkUpdate = async () => {
+  updateMessage.value = ''
+  checkingUpdate.value = true
+  try {
+    await loadVersion()
+    const response = await api.post('/system-update/check', { source: updateSource.value })
+    updateCheck.value = response.data
+    updateMessageType.value = 'success'
+    updateMessage.value = response.data.message || '检查完成'
+  } catch (err) {
+    updateMessageType.value = 'error'
+    updateMessage.value = err.response?.data?.error || '检查更新失败'
+  } finally {
+    checkingUpdate.value = false
+  }
+}
+
+const applyUpdate = async () => {
+  updateMessage.value = ''
+  applyingUpdate.value = true
+  try {
+    const response = await api.post('/system-update/apply', { source: updateSource.value })
+    updateMessageType.value = 'success'
+    updateMessage.value = `${response.data.message || '更新任务已启动'}，${response.data.command || '请稍后刷新页面'}`
+  } catch (err) {
+    updateMessageType.value = 'error'
+    updateMessage.value = err.response?.data?.error || '启动更新失败'
+  } finally {
+    applyingUpdate.value = false
+  }
+}
+
 onMounted(() => {
   loadSettings().catch((err) => {
     accountMessageType.value = 'error'
     accountMessage.value = err.response?.data?.error || '加载系统设置失败'
+  })
+  loadVersion().catch(() => {
+    versionInfo.value = {}
   })
 })
 </script>
