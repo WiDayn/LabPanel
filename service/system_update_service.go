@@ -2,7 +2,6 @@ package service
 
 import (
 	"LabPanel/models"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -152,17 +151,19 @@ func remoteHeadCommit(remoteURL, branch string) (string, error) {
 	return remoteHeadCommitWithTimeout(remoteURL, branch, 20*time.Second)
 }
 
-func remoteHeadCommitWithTimeout(remoteURL, branch string, timeout time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+func remoteHeadCommitWithTimeout(remoteURL, branch string, timeoutDuration time.Duration) (string, error) {
+	timeoutSeconds := int(timeoutDuration.Seconds())
+	if timeoutSeconds < 1 {
+		timeoutSeconds = 1
+	}
 
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", remoteURL, branch)
+	cmd := exec.Command("timeout", fmt.Sprintf("%ds", timeoutSeconds), "git", "ls-remote", "--heads", remoteURL, branch)
 	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("检查更新超时")
-	}
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 124 {
+			return "", fmt.Errorf("检查更新超时")
+		}
 		return "", fmt.Errorf("检查远端版本失败: %v, 输出: %s", err, strings.TrimSpace(string(output)))
 	}
 
