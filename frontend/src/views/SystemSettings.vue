@@ -150,13 +150,37 @@ const updateMessageType = ref('success')
 const versionInfo = ref({})
 const updateCheck = ref(null)
 const probeResult = ref(null)
-const updateSource = ref('github')
+const updateSourceStorageKey = 'labpanel:update-source'
+const defaultUpdateSource = 'github'
 
 const updateSources = [
   { label: 'GitHub', value: 'github' },
   { label: 'gh-proxy.org', value: 'gh-proxy-org' },
   { label: 'gh-proxy.com', value: 'gh-proxy' },
 ]
+
+const readSavedUpdateSource = () => {
+  if (typeof window === 'undefined') return defaultUpdateSource
+
+  try {
+    const savedSource = window.localStorage.getItem(updateSourceStorageKey)
+    return updateSources.some((source) => source.value === savedSource) ? savedSource : defaultUpdateSource
+  } catch {
+    return defaultUpdateSource
+  }
+}
+
+const saveUpdateSource = (source) => {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(updateSourceStorageKey, source)
+  } catch {
+    // Ignore unavailable browser storage and keep the in-memory selection active.
+  }
+}
+
+const updateSource = ref(readSavedUpdateSource())
 
 const titleMessageClass = computed(() =>
   titleMessageType.value === 'success' ? 'text-sm text-green-600' : 'text-sm text-red-500'
@@ -187,7 +211,10 @@ const loadVersion = async () => {
 }
 
 const selectUpdateSource = (source) => {
+  if (!updateSources.some((option) => option.value === source)) return
+
   updateSource.value = source
+  saveUpdateSource(source)
   probeResult.value = null
   updateCheck.value = null
   updateMessage.value = ''
