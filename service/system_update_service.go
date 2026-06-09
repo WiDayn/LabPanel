@@ -12,10 +12,12 @@ import (
 )
 
 const (
-	updateSourceGitHub  = "github"
-	updateSourceGhProxy = "gh-proxy"
-	labPanelRepoURL     = "https://github.com/WiDayn/LabPanel.git"
-	ghProxyPrefix       = "https://gh-proxy.com/"
+	updateSourceGitHub     = "github"
+	updateSourceGhProxyCom = "gh-proxy"
+	updateSourceGhProxyOrg = "gh-proxy-org"
+	labPanelRepoURL        = "https://github.com/WiDayn/LabPanel.git"
+	ghProxyComPrefix       = "https://gh-proxy.com/"
+	ghProxyOrgPrefix       = "https://gh-proxy.org/"
 )
 
 func CheckSystemUpdate(source string) (models.SystemUpdateCheckResponse, error) {
@@ -32,10 +34,6 @@ func CheckSystemUpdate(source string) (models.SystemUpdateCheckResponse, error) 
 		return models.SystemUpdateCheckResponse{}, err
 	}
 
-	remoteShort := remoteCommit
-	if len(remoteShort) > 12 {
-		remoteShort = remoteShort[:12]
-	}
 	hasUpdate := localCommit != "" && remoteCommit != "" && !strings.HasPrefix(localCommit, remoteCommit) && !strings.HasPrefix(remoteCommit, localCommit)
 	message := "当前已是最新版本"
 	if hasUpdate {
@@ -47,10 +45,37 @@ func CheckSystemUpdate(source string) (models.SystemUpdateCheckResponse, error) 
 		Current:           current,
 		Branch:            branch,
 		RemoteCommit:      remoteCommit,
-		RemoteCommitShort: remoteShort,
+		RemoteCommitShort: shortCommit(remoteCommit),
 		HasUpdate:         hasUpdate,
 		Message:           message,
 	}, nil
+}
+
+func ProbeSystemUpdateSource(source string) (models.SystemUpdateProbeResponse, error) {
+	source, remoteURL, err := normalizeUpdateSource(source)
+	if err != nil {
+		return models.SystemUpdateProbeResponse{}, err
+	}
+
+	branch := firstNonEmpty(gitOutput("rev-parse", "--abbrev-ref", "HEAD"), "main")
+	startedAt := time.Now()
+	remoteCommit, err := remoteHeadCommitWithTimeout(remoteURL, branch, 10*time.Second)
+	latencyMs := time.Since(startedAt).Milliseconds()
+	response := models.SystemUpdateProbeResponse{
+		Source:            source,
+		Reachable:         err == nil,
+		LatencyMs:         latencyMs,
+		RemoteCommit:      remoteCommit,
+		RemoteCommitShort: shortCommit(remoteCommit),
+	}
+
+	if err != nil {
+		response.Message = err.Error()
+		return response, nil
+	}
+
+	response.Message = fmt.Sprintf("连通，耗时 %d ms", latencyMs)
+	return response, nil
 }
 
 func StartSystemUpdate(source string) (models.SystemUpdateApplyResponse, error) {
@@ -65,14 +90,13 @@ func StartSystemUpdate(source string) (models.SystemUpdateApplyResponse, error) 
 	}
 
 	unitName := fmt.Sprintf("lab-panel-update-%d", time.Now().Unix())
-	route := updateRouteName(source)
 	args := []string{
 		"--unit", unitName,
 		"--collect",
 		"--property", "WorkingDirectory=" + workDir,
 		"--setenv", "GIT_TRANSPORT=https",
-		"--setenv", "GITHUB_ROUTE=" + route,
-		"--setenv", "DEFAULT_GITHUB_PROXY=" + ghProxyPrefix,
+		"--setenv", "GITHUB_ROUTE=" + updateRouteName(source),
+		"--setenv", "DEFAULT_GITHUB_PROXY=" + updateProxyPrefix(source),
 		filepath.Join(workDir, "update.sh"),
 	}
 
@@ -94,22 +118,42 @@ func normalizeUpdateSource(source string) (string, string, error) {
 	switch source {
 	case "", updateSourceGitHub:
 		return updateSourceGitHub, labPanelRepoURL, nil
-	case updateSourceGhProxy, "gh-proxy.com", "proxy":
-		return updateSourceGhProxy, ghProxyPrefix + labPanelRepoURL, nil
+	case updateSourceGhProxyCom, "gh-proxy.com", "proxy":
+		return updateSourceGhProxyCom, ghProxyComPrefix + labPanelRepoURL, nil
+	case updateSourceGhProxyOrg, "gh-proxy.org":
+		return updateSourceGhProxyOrg, ghProxyOrgPrefix + labPanelRepoURL, nil
 	default:
 		return "", "", fmt.Errorf("不支持的更新来源: %s", source)
 	}
 }
 
 func updateRouteName(source string) string {
-	if source == updateSourceGhProxy {
-		return "gh-proxy"
+	if source == updateSourceGitHub {
+		return "github"
 	}
-	return "github"
+	return "gh-proxy"
+}
+
+func updateProxyPrefix(source string) string {
+	if source == updateSourceGhProxyOrg {
+		return ghProxyOrgPrefix
+	}
+	return ghProxyComPrefix
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
 }
 
 func remoteHeadCommit(remoteURL, branch string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	return remoteHeadCommitWithTimeout(remoteURL, branch, 20*time.Second)
+}
+
+func remoteHeadCommitWithTimeout(remoteURL, branch string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", remoteURL, branch)

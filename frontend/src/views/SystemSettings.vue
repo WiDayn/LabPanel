@@ -78,7 +78,7 @@
                 type="button"
                 class="h-8 px-3 text-sm font-medium rounded transition-colors"
                 :class="updateSource === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                @click="updateSource = option.value"
+                @click="selectUpdateSource(option.value)"
               >
                 {{ option.label }}
               </button>
@@ -86,7 +86,7 @@
           </div>
         </div>
 
-        <div class="py-4 grid gap-4 sm:grid-cols-2">
+        <div class="py-4 grid gap-4 sm:grid-cols-3">
           <div class="rounded-md border bg-gray-50 p-4">
             <div class="text-sm text-gray-500">当前 Commit</div>
             <div class="mt-1 font-medium text-gray-900">{{ versionInfo.commit || '-' }}</div>
@@ -95,11 +95,18 @@
             <div class="text-sm text-gray-500">远端 Commit</div>
             <div class="mt-1 font-medium text-gray-900">{{ updateCheck?.remoteCommitShort || '-' }}</div>
           </div>
+          <div class="rounded-md border bg-gray-50 p-4">
+            <div class="text-sm text-gray-500">节点测速</div>
+            <div class="mt-1 font-medium text-gray-900">{{ probeLatencyText }}</div>
+          </div>
         </div>
 
         <div v-if="updateMessage" :class="updateMessageClass">{{ updateMessage }}</div>
 
         <div class="mt-4 flex flex-wrap justify-end gap-3">
+          <Button variant="outline" :disabled="probingUpdate || checkingUpdate || applyingUpdate" @click="probeUpdateSource">
+            {{ probingUpdate ? '测速中...' : '测速' }}
+          </Button>
           <Button variant="outline" :disabled="checkingUpdate || applyingUpdate" @click="checkUpdate">
             {{ checkingUpdate ? '检查中...' : '检查更新' }}
           </Button>
@@ -131,6 +138,7 @@ const accountForm = ref({
 
 const savingTitle = ref(false)
 const savingAccount = ref(false)
+const probingUpdate = ref(false)
 const checkingUpdate = ref(false)
 const applyingUpdate = ref(false)
 const titleMessage = ref('')
@@ -141,10 +149,12 @@ const updateMessage = ref('')
 const updateMessageType = ref('success')
 const versionInfo = ref({})
 const updateCheck = ref(null)
+const probeResult = ref(null)
 const updateSource = ref('github')
 
 const updateSources = [
   { label: 'GitHub', value: 'github' },
+  { label: 'gh-proxy.org', value: 'gh-proxy-org' },
   { label: 'gh-proxy.com', value: 'gh-proxy' },
 ]
 
@@ -158,6 +168,12 @@ const updateMessageClass = computed(() =>
   updateMessageType.value === 'success' ? 'text-sm text-green-600' : 'text-sm text-red-500'
 )
 const versionDisplay = computed(() => versionInfo.value.display || '')
+const selectedUpdateSource = computed(() => updateSources.find((source) => source.value === updateSource.value))
+const probeLatencyText = computed(() => {
+  if (!probeResult.value) return '-'
+  if (!probeResult.value.reachable) return '不可用'
+  return `${probeResult.value.latencyMs} ms`
+})
 
 const loadSettings = async () => {
   const response = await api.get('/system-settings')
@@ -168,6 +184,13 @@ const loadSettings = async () => {
 const loadVersion = async () => {
   const response = await api.get('/version')
   versionInfo.value = response.data || {}
+}
+
+const selectUpdateSource = (source) => {
+  updateSource.value = source
+  probeResult.value = null
+  updateCheck.value = null
+  updateMessage.value = ''
 }
 
 const saveTitle = async () => {
@@ -229,6 +252,25 @@ const saveAccount = async () => {
     accountMessage.value = err.response?.data?.error || '保存管理员账号失败'
   } finally {
     savingAccount.value = false
+  }
+}
+
+const probeUpdateSource = async () => {
+  updateMessage.value = ''
+  probingUpdate.value = true
+  try {
+    const response = await api.post('/system-update/probe', { source: updateSource.value })
+    probeResult.value = response.data
+    updateMessageType.value = response.data.reachable ? 'success' : 'error'
+    const label = selectedUpdateSource.value?.label || response.data.source || '当前节点'
+    updateMessage.value = response.data.reachable
+      ? `${label} 连通，耗时 ${response.data.latencyMs} ms`
+      : `${label} 不可用：${response.data.message || '连通性检测失败'}`
+  } catch (err) {
+    updateMessageType.value = 'error'
+    updateMessage.value = err.response?.data?.error || '测速失败'
+  } finally {
+    probingUpdate.value = false
   }
 }
 

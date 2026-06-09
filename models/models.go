@@ -55,6 +55,15 @@ type SystemUpdateApplyResponse struct {
 	Message string `json:"message"`
 }
 
+type SystemUpdateProbeResponse struct {
+	Source            string `json:"source"`
+	Reachable         bool   `json:"reachable"`
+	LatencyMs         int64  `json:"latencyMs"`
+	RemoteCommit      string `json:"remoteCommit"`
+	RemoteCommitShort string `json:"remoteCommitShort"`
+	Message           string `json:"message"`
+}
+
 type ConfigResponse struct {
 	Content string `json:"content"`
 }

@@ -95,6 +95,7 @@ func main() {
 			auth.PUT("/system-settings/title", handlers.UpdateSystemTitle)
 			auth.PUT("/system-settings/account", handlers.UpdateAdminAccount)
 			auth.POST("/system-update/check", handlers.CheckSystemUpdate)
+			auth.POST("/system-update/probe", handlers.ProbeSystemUpdate)
 			auth.POST("/system-update/apply", handlers.ApplySystemUpdate)
 
 			// 代理管理
