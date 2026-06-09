@@ -261,7 +261,6 @@ func (s *LxcGroupService) cleanupStoreLocked(store *lxcGroupStore, pruneStaleCon
 			changed = pruneStaleContainerGroups(store, containerNames) || changed
 		}
 	}
-	changed = pruneUnusedGroups(store) || changed
 	return changed
 }
 
@@ -388,30 +387,6 @@ func pruneStaleContainerGroups(store *lxcGroupStore, containerNames map[string]s
 			changed = true
 		}
 	}
-	return changed
-}
-
-func pruneUnusedGroups(store *lxcGroupStore) bool {
-	used := map[string]struct{}{}
-	for _, groupIDs := range store.ContainerGroups {
-		for _, groupID := range groupIDs {
-			used[groupID] = struct{}{}
-		}
-	}
-
-	changed := false
-	groups := make([]models.LxcGroup, 0, len(store.Groups))
-	for _, group := range store.Groups {
-		if _, ok := used[group.ID]; !ok {
-			changed = true
-			continue
-		}
-		groups = append(groups, group)
-	}
-	if len(groups) != len(store.Groups) {
-		changed = true
-	}
-	store.Groups = groups
 	return changed
 }
 
