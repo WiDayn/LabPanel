@@ -15,6 +15,10 @@ GIT_TRANSPORT_OVERRIDE="${GIT_TRANSPORT-}"
 GITHUB_ROUTE_OVERRIDE="${GITHUB_ROUTE-}"
 RUN_USER=""
 SELECTED_GITHUB_PROXY=""
+TMP_BINARY=""
+TMP_DIST=""
+BACKUP_BINARY=""
+BACKUP_DIST=""
 
 log() {
     echo "[update] $*"
@@ -227,8 +231,76 @@ git_cmd() {
     fi
 }
 
+
+service_exists() {
+    run_sudo systemctl cat "$1" >/dev/null 2>&1
+}
+
+cleanup_temp_artifacts() {
+    [ -n "${TMP_BINARY:-}" ] && rm -f -- "$TMP_BINARY"
+    [ -n "${TMP_DIST:-}" ] && rm -rf -- "$TMP_DIST"
+}
+
+cleanup_backup_artifacts() {
+    [ -n "${BACKUP_BINARY:-}" ] && rm -f -- "$BACKUP_BINARY"
+    [ -n "${BACKUP_DIST:-}" ] && rm -rf -- "$BACKUP_DIST"
+}
+
+restore_previous_artifacts() {
+    log "恢复上一版构建产物..."
+    [ -f LabPanel ] && rm -f -- LabPanel
+    [ -d frontend/dist ] && rm -rf -- frontend/dist
+    [ -n "${BACKUP_BINARY:-}" ] && [ -f "$BACKUP_BINARY" ] && mv -- "$BACKUP_BINARY" LabPanel
+    [ -n "${BACKUP_DIST:-}" ] && [ -d "$BACKUP_DIST" ] && mv -- "$BACKUP_DIST" frontend/dist
+}
+
+install_built_artifacts() {
+    if [ ! -f "$TMP_BINARY" ]; then
+        log "未找到后端临时构建产物: $TMP_BINARY"
+        return 1
+    fi
+    if [ ! -d "$TMP_DIST" ]; then
+        log "未找到前端临时构建产物: $TMP_DIST"
+        return 1
+    fi
+
+    rm -f -- "$BACKUP_BINARY"
+    rm -rf -- "$BACKUP_DIST"
+    [ -f LabPanel ] && mv -- LabPanel "$BACKUP_BINARY"
+    [ -d frontend/dist ] && mv -- frontend/dist "$BACKUP_DIST"
+    mv -- "$TMP_BINARY" LabPanel
+    mv -- "$TMP_DIST" frontend/dist
+}
+
+restart_app_service() {
+    if [ "$START_SERVICES" != "1" ]; then
+        log "START_SERVICES=${START_SERVICES}，已跳过重启 services"
+        return 0
+    fi
+
+    if ! service_exists "$APP_SERVICE"; then
+        log "服务 ${APP_SERVICE}.service 不存在，请设置 APP_SERVICE 或先运行 install.sh"
+        return 1
+    fi
+
+    log "重启 ${APP_SERVICE}.service..."
+    if ! run_sudo systemctl restart "$APP_SERVICE"; then
+        log "服务重启失败，开始回滚"
+        restore_previous_artifacts
+        run_sudo systemctl start "$APP_SERVICE" 2>/dev/null || true
+        return 1
+    fi
+
+    if ! run_sudo systemctl is-active --quiet "$APP_SERVICE"; then
+        log "服务重启后未保持 active，开始回滚"
+        restore_previous_artifacts
+        run_sudo systemctl start "$APP_SERVICE" 2>/dev/null || true
+        return 1
+    fi
+}
+
 main() {
-    local script_dir
+    local script_dir suffix
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     cd "$script_dir"
     detect_run_user "$script_dir"
@@ -236,22 +308,37 @@ main() {
     configure_network
     select_github_route
 
-    log "停止 services..."
-    run_sudo systemctl stop "$APP_SERVICE" 2>/dev/null || true
+    if [ "$START_SERVICES" = "1" ] && ! service_exists "$APP_SERVICE"; then
+        log "服务 ${APP_SERVICE}.service 不存在，请设置 APP_SERVICE 或先运行 install.sh"
+        exit 1
+    fi
 
     log "拉取最新代码..."
     git_cmd pull --ff-only
 
+    suffix="$$"
+    TMP_BINARY=".LabPanel.update.${suffix}"
+    TMP_DIST="frontend/.dist-update.${suffix}"
+    BACKUP_BINARY=".LabPanel.backup.${suffix}"
+    BACKUP_DIST="frontend/.dist-backup.${suffix}"
+    trap cleanup_temp_artifacts EXIT
+    cleanup_temp_artifacts
+    cleanup_backup_artifacts
+
     log "重新编译前后端..."
-    run_user bash ./build.sh
+    run_user env OUTPUT_BINARY="$TMP_BINARY" FRONTEND_OUT_DIR=".dist-update.${suffix}" bash ./build.sh
+
+    log "替换构建产物..."
+    install_built_artifacts
 
     run_sudo systemctl daemon-reload
-    if [ "$START_SERVICES" = "1" ]; then
-        log "启动 services..."
-        run_sudo systemctl start "$APP_SERVICE"
-    else
-        log "START_SERVICES=0，已跳过启动 services"
+    if ! restart_app_service; then
+        exit 1
     fi
+
+    cleanup_backup_artifacts
+    trap - EXIT
+    cleanup_temp_artifacts
 
     log "更新完成"
 }

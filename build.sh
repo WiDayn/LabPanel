@@ -8,6 +8,9 @@ echo "开始构建 LabPanel..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+OUTPUT_BINARY="${OUTPUT_BINARY:-LabPanel}"
+FRONTEND_OUT_DIR="${FRONTEND_OUT_DIR:-dist}"
+
 use_sudo_user_node() {
     local sudo_user_home node_bin
 
@@ -65,13 +68,17 @@ fi
 
 # 构建前端
 echo "执行前端构建..."
-pnpm build
+if [ "$FRONTEND_OUT_DIR" = "dist" ]; then
+    pnpm build
+else
+    pnpm exec vite build --outDir "$FRONTEND_OUT_DIR" --emptyOutDir
+fi
 
 cd ..
 
 # 检查前端构建结果
-if [ ! -d "frontend/dist" ]; then
-    echo "错误: 前端构建失败，未找到 dist 目录"
+if [ ! -d "frontend/$FRONTEND_OUT_DIR" ]; then
+    echo "错误: 前端构建失败，未找到 frontend/$FRONTEND_OUT_DIR 目录"
     exit 1
 fi
 
@@ -93,17 +100,17 @@ APP_COMMIT="${APP_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo "u
 APP_COMMIT_DATE="${APP_COMMIT_DATE:-$(git show -s --format=%cs HEAD 2>/dev/null || date +%F)}"
 CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build \
     -ldflags="-w -s -X LabPanel/service.AppVersion=${APP_VERSION} -X LabPanel/service.AppCommit=${APP_COMMIT} -X LabPanel/service.AppCommitDate=${APP_COMMIT_DATE}" \
-    -o LabPanel main.go
+    -o "$OUTPUT_BINARY" main.go
 
-if [ ! -f "LabPanel" ]; then
-    echo "错误: 后端构建失败"
+if [ ! -f "$OUTPUT_BINARY" ]; then
+    echo "错误: 后端构建失败，未找到 $OUTPUT_BINARY"
     exit 1
 fi
 
 echo "后端构建完成"
 echo ""
 echo "构建成功！"
-echo "可执行文件: $(pwd)/LabPanel"
-echo "前端文件: $(pwd)/frontend/dist"
+echo "可执行文件: $(pwd)/$OUTPUT_BINARY"
+echo "前端文件: $(pwd)/frontend/$FRONTEND_OUT_DIR"
 echo ""
 echo "运行方式: ./LabPanel"
