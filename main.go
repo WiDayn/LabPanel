@@ -5,6 +5,7 @@ import (
 	"LabPanel/handlers"
 	"LabPanel/middleware"
 	"LabPanel/service"
+	"fmt"
 	"html"
 	"log"
 	"net/http"
@@ -15,6 +16,21 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "hash-password" {
+		hashedPassword, err := config.HashPassword(os.Args[2])
+		if err != nil {
+			log.Fatalf("生成密码哈希失败: %v", err)
+		}
+		fmt.Println(hashedPassword)
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "migrate-config" {
+		if _, err := config.Load(); err != nil {
+			log.Fatalf("迁移配置失败: %v", err)
+		}
+		return
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
@@ -74,6 +90,9 @@ func main() {
 			auth.POST("/restart", handlers.RestartService)
 			auth.GET("/status", handlers.GetServiceStatus)
 			auth.GET("/gpu/monitor", handlers.GetGPUMonitor)
+			auth.GET("/system-settings", handlers.GetSystemSettings)
+			auth.PUT("/system-settings/title", handlers.UpdateSystemTitle)
+			auth.PUT("/system-settings/account", handlers.UpdateAdminAccount)
 
 			// 代理管理
 			auth.GET("/proxies", handlers.GetProxyList)
@@ -126,7 +145,7 @@ func main() {
 			return
 		}
 		// 其他请求返回 index.html（用于 Vue Router）
-		serveIndexHTML(c, cfg.AppTitle)
+		serveIndexHTML(c)
 	})
 
 	log.Printf("服务器启动在端口 %s", cfg.Port)
@@ -135,13 +154,17 @@ func main() {
 	}
 }
 
-func serveIndexHTML(c *gin.Context, appTitle string) {
+func serveIndexHTML(c *gin.Context) {
 	data, err := os.ReadFile("./frontend/dist/index.html")
 	if err != nil {
 		c.File("./frontend/dist/index.html")
 		return
 	}
 
+	appTitle := "LabPanel 管理面板"
+	if cfg, err := config.Load(); err == nil {
+		appTitle = cfg.AppTitle
+	}
 	title := html.EscapeString(appTitle)
 	content := strings.ReplaceAll(string(data), "%APP_TITLE%", title)
 	content = strings.Replace(content, "<title>LabPanel 管理面板</title>", "<title>"+title+"</title>", 1)

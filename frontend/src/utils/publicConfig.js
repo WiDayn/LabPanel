@@ -26,3 +26,9 @@ export const loadPublicConfig = async () => {
 
   return publicConfigRequest
 }
+
+export const setAppTitle = (title) => {
+  const nextTitle = title?.trim() || fallbackTitle
+  appTitle.value = nextTitle
+  document.title = nextTitle
+}

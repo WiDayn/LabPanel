@@ -15,7 +15,7 @@ GO_VERSION="${GO_VERSION:-1.22.12}"
 PORT="${PORT:-8080}"
 APP_TITLE="${APP_TITLE:-LabPanel 管理面板}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 JWT_SECRET="${JWT_SECRET:-}"
 USE_FRP="${USE_FRP:-}"
 FRP_MODE="${FRP_MODE:-}"
@@ -430,7 +430,7 @@ prepare_source() {
 }
 
 ensure_env() {
-    local env_file jwt
+    local env_file jwt admin_hashed_password
     env_file="${INSTALL_DIR}/.env"
     jwt="$JWT_SECRET"
     if [ -z "$jwt" ]; then
@@ -444,8 +444,10 @@ ensure_env() {
     set_env_value "$env_file" "PORT" "$PORT"
     set_env_value "$env_file" "APP_TITLE" "$APP_TITLE"
     set_env_value "$env_file" "JWT_SECRET" "$jwt"
+    admin_hashed_password="$("${INSTALL_DIR}/${APP_NAME}" hash-password "$ADMIN_PASSWORD")"
     set_env_value "$env_file" "ADMIN_USERNAME" "$ADMIN_USERNAME"
-    set_env_value "$env_file" "ADMIN_PASSWORD" "$ADMIN_PASSWORD"
+    set_env_value "$env_file" "ADMIN_HASHED_PASSWORD" "$admin_hashed_password"
+    delete_env_value "$env_file" "ADMIN_PASSWORD"
     set_env_value "$env_file" "APP_SERVICE" "$APP_SERVICE"
     set_env_value "$env_file" "FRP_SERVICE" "$FRP_SERVICE"
     set_env_value "$env_file" "GITHUB_PROXY" "$GITHUB_PROXY"
@@ -477,6 +479,15 @@ set_env_value() {
         sed -i "/^${key}=/d" "$file"
     fi
     printf '%s="%s"\n' "$key" "$escaped" >> "$file"
+}
+
+delete_env_value() {
+    local file key
+    file="$1"
+    key="$2"
+    if [ -f "$file" ]; then
+        sed -i "/^${key}=/d" "$file"
+    fi
 }
 
 build_app() {

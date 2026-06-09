@@ -13,6 +13,21 @@ type PublicConfigResponse struct {
 	Title string `json:"title"`
 }
 
+type SystemSettingsResponse struct {
+	Title    string `json:"title"`
+	Username string `json:"username"`
+}
+
+type SystemTitleUpdateRequest struct {
+	Title string `json:"title" binding:"required"`
+}
+
+type AdminAccountUpdateRequest struct {
+	Username        string `json:"username" binding:"required"`
+	CurrentPassword string `json:"currentPassword" binding:"required"`
+	NewPassword     string `json:"newPassword"`
+}
+
 type ConfigResponse struct {
 	Content string `json:"content"`
 }

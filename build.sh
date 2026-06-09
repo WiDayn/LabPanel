@@ -8,6 +8,37 @@ echo "开始构建 LabPanel..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+use_sudo_user_node() {
+    local sudo_user_home node_bin
+
+    if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ]; then
+        return
+    fi
+
+    sudo_user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    if [ -z "$sudo_user_home" ]; then
+        return
+    fi
+
+    if [ -d "$sudo_user_home/.nvm/versions/node" ]; then
+        node_bin="$(
+            find "$sudo_user_home/.nvm/versions/node" \
+                -mindepth 2 -maxdepth 2 -type f -path '*/bin/node' \
+                -printf '%h\n' | sort -V | tail -n 1
+        )"
+        if [ -n "$node_bin" ]; then
+            export PATH="$node_bin:$PATH"
+        fi
+    fi
+
+    if [ -d "$sudo_user_home/.local/share/pnpm" ]; then
+        export PNPM_HOME="$sudo_user_home/.local/share/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+    fi
+}
+
+use_sudo_user_node
+
 # 检查 pnpm 是否安装
 if ! command -v pnpm &> /dev/null; then
     echo "错误: 未找到 pnpm，请先安装 pnpm"
