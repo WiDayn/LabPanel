@@ -78,6 +78,7 @@
                   </div>
                   <GpuMemoryChart
                     :series="gpu.memorySeries || []"
+                    :processes="gpu.processes || []"
                     :total-memory="gpu.memoryTotalMiB"
                   />
                 </div>
@@ -159,12 +160,26 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import AppHeader from '@/components/AppHeader.vue'
 
-const chartColors = ['#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#0891b2', '#dc2626', '#4f46e5', '#ca8a04']
+const totalSeriesColor = '#111827'
+const hostSeriesColor = '#6b7280'
+const ownerChartColorVariants = {
+  blue: ['#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8'],
+  emerald: ['#34d399', '#10b981', '#059669', '#047857'],
+  amber: ['#fbbf24', '#f59e0b', '#d97706', '#b45309'],
+  violet: ['#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9'],
+  rose: ['#fb7185', '#f43f5e', '#e11d48', '#be123c'],
+  cyan: ['#22d3ee', '#06b6d4', '#0891b2', '#0e7490'],
+  lime: ['#a3e635', '#84cc16', '#65a30d', '#4d7c0f'],
+  orange: ['#fb923c', '#f97316', '#ea580c', '#c2410c'],
+  slate: ['#94a3b8', '#64748b', '#475569', '#334155'],
+  indigo: ['#818cf8', '#6366f1', '#4f46e5', '#4338ca'],
+}
 
 const GpuMemoryChart = defineComponent({
   name: 'GpuMemoryChart',
   props: {
     series: { type: Array, required: true },
+    processes: { type: Array, default: () => [] },
     totalMemory: { type: Number, required: true },
   },
   setup(props) {
@@ -193,6 +208,28 @@ const GpuMemoryChart = defineComponent({
       if (!points.length) return 0
       return Number(points[points.length - 1].usedMemoryMiB || 0)
     }
+    const containerGroupColors = computed(() => {
+      const colors = new Map()
+      for (const process of props.processes || []) {
+        if (process.ownerType !== 'container' || !process.containerName || colors.has(process.containerName)) {
+          continue
+        }
+        const groupColor = Array.isArray(process.groups) && process.groups.length ? process.groups[0]?.color : ''
+        colors.set(process.containerName, groupColor || 'blue')
+      }
+      return colors
+    })
+    const seriesColor = (item) => {
+      if (item.ownerType === 'total') {
+        return totalSeriesColor
+      }
+      if (item.ownerType !== 'container') {
+        return hostSeriesColor
+      }
+      const groupColor = containerGroupColors.value.get(item.containerName) || 'blue'
+      const variants = ownerChartColorVariants[groupColor] || ownerChartColorVariants.blue
+      return variants[stableColorIndex(item.containerName || item.label, variants.length)]
+    }
     const xTicks = computed(() => {
       const longestSeries = props.series.reduce((longest, item) => {
         const points = item.points || []
@@ -217,10 +254,10 @@ const GpuMemoryChart = defineComponent({
                 h('line', { x1: tick.x, y1: height - padding.bottom, x2: tick.x, y2: height - padding.bottom + 4, stroke: '#d1d5db' }),
                 h('text', { x: tick.x, y: height - 10, 'text-anchor': 'middle', class: 'fill-gray-500 text-[10px]' }, tick.label),
               ]),
-              ...props.series.map((item, index) => h('path', {
+              ...props.series.map((item) => h('path', {
                 d: linePath(item.points || []),
                 fill: 'none',
-                stroke: chartColors[index % chartColors.length],
+                stroke: seriesColor(item),
                 'stroke-width': 2.5,
                 'stroke-linejoin': 'round',
                 'stroke-linecap': 'round',
@@ -229,9 +266,9 @@ const GpuMemoryChart = defineComponent({
           : h('div', { class: 'flex h-full items-center justify-center text-sm text-gray-500' }, '等待显存采样数据'),
       ]),
       props.series.length
-        ? h('div', { class: 'mt-3 flex flex-wrap gap-3' }, props.series.map((item, index) =>
+        ? h('div', { class: 'mt-3 flex flex-wrap gap-3' }, props.series.map((item) =>
             h('div', { class: 'flex items-center gap-2 text-xs text-gray-600' }, [
-              h('span', { class: 'h-2.5 w-2.5 rounded-full', style: { backgroundColor: chartColors[index % chartColors.length] } }),
+              h('span', { class: 'h-2.5 w-2.5 rounded-full', style: { backgroundColor: seriesColor(item) } }),
               h('span', { class: 'font-medium text-gray-800' }, item.label),
               h('span', `${latestValue(item).toFixed(0)} MiB`),
             ])

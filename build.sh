@@ -8,22 +8,20 @@ echo "开始构建 LabPanel..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-use_sudo_user_node() {
-    local sudo_user_home node_bin
+OUTPUT_BINARY="${OUTPUT_BINARY:-LabPanel}"
+FRONTEND_OUT_DIR="${FRONTEND_OUT_DIR:-dist}"
 
-    if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ]; then
+prepend_node_tools_from_home() {
+    local user_home node_bin
+    user_home="${1:-}"
+    if [ -z "$user_home" ]; then
         return
     fi
 
-    sudo_user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-    if [ -z "$sudo_user_home" ]; then
-        return
-    fi
-
-    if [ -d "$sudo_user_home/.nvm/versions/node" ]; then
+    if [ -d "$user_home/.nvm/versions/node" ]; then
         node_bin="$(
-            find "$sudo_user_home/.nvm/versions/node" \
-                -mindepth 2 -maxdepth 2 -type f -path '*/bin/node' \
+            find "$user_home/.nvm/versions/node" \
+                -mindepth 3 -maxdepth 3 -type f -path '*/bin/node' \
                 -printf '%h\n' | sort -V | tail -n 1
         )"
         if [ -n "$node_bin" ]; then
@@ -31,13 +29,34 @@ use_sudo_user_node() {
         fi
     fi
 
-    if [ -d "$sudo_user_home/.local/share/pnpm" ]; then
-        export PNPM_HOME="$sudo_user_home/.local/share/pnpm"
+    if [ -d "$user_home/.local/share/pnpm" ]; then
+        export PNPM_HOME="$user_home/.local/share/pnpm"
         export PATH="$PNPM_HOME:$PATH"
     fi
 }
 
-use_sudo_user_node
+configure_node_tools_path() {
+    local current_user_home repo_owner repo_owner_home sudo_user_home
+    current_user_home="${HOME:-}"
+    if [ -z "$current_user_home" ]; then
+        current_user_home="$(getent passwd "$(id -un)" | cut -d: -f6)"
+    fi
+
+    prepend_node_tools_from_home "$current_user_home"
+
+    repo_owner="$(stat -c '%U' "$SCRIPT_DIR" 2>/dev/null || true)"
+    if [ -n "$repo_owner" ] && [ "$repo_owner" != "root" ]; then
+        repo_owner_home="$(getent passwd "$repo_owner" | cut -d: -f6)"
+        prepend_node_tools_from_home "$repo_owner_home"
+    fi
+
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+        sudo_user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+        prepend_node_tools_from_home "$sudo_user_home"
+    fi
+}
+
+configure_node_tools_path
 
 # 检查 pnpm 是否安装
 if ! command -v pnpm &> /dev/null; then
@@ -65,13 +84,17 @@ fi
 
 # 构建前端
 echo "执行前端构建..."
-pnpm build
+if [ "$FRONTEND_OUT_DIR" = "dist" ]; then
+    pnpm build
+else
+    pnpm exec vite build --outDir "$FRONTEND_OUT_DIR" --emptyOutDir
+fi
 
 cd ..
 
 # 检查前端构建结果
-if [ ! -d "frontend/dist" ]; then
-    echo "错误: 前端构建失败，未找到 dist 目录"
+if [ ! -d "frontend/$FRONTEND_OUT_DIR" ]; then
+    echo "错误: 前端构建失败，未找到 frontend/$FRONTEND_OUT_DIR 目录"
     exit 1
 fi
 
@@ -88,17 +111,22 @@ go mod tidy
 # 构建可执行文件
 echo "编译 Go 程序..."
 GOARCH_VALUE="${GOARCH:-$(go env GOARCH)}"
-CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build -ldflags="-w -s" -o LabPanel main.go
+APP_VERSION="${APP_VERSION:-$(node -e "console.log(require('./frontend/package.json').version)" 2>/dev/null || echo "1.0.0")}"
+APP_COMMIT="${APP_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo "unknown")}"
+APP_COMMIT_DATE="${APP_COMMIT_DATE:-$(git show -s --format=%cs HEAD 2>/dev/null || date +%F)}"
+CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build \
+    -ldflags="-w -s -X LabPanel/service.AppVersion=${APP_VERSION} -X LabPanel/service.AppCommit=${APP_COMMIT} -X LabPanel/service.AppCommitDate=${APP_COMMIT_DATE}" \
+    -o "$OUTPUT_BINARY" main.go
 
-if [ ! -f "LabPanel" ]; then
-    echo "错误: 后端构建失败"
+if [ ! -f "$OUTPUT_BINARY" ]; then
+    echo "错误: 后端构建失败，未找到 $OUTPUT_BINARY"
     exit 1
 fi
 
 echo "后端构建完成"
 echo ""
 echo "构建成功！"
-echo "可执行文件: $(pwd)/LabPanel"
-echo "前端文件: $(pwd)/frontend/dist"
+echo "可执行文件: $(pwd)/$OUTPUT_BINARY"
+echo "前端文件: $(pwd)/frontend/$FRONTEND_OUT_DIR"
 echo ""
 echo "运行方式: ./LabPanel"

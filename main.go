@@ -92,6 +92,7 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.GET("/public-config", handlers.GetPublicConfig)
+		api.GET("/version", handlers.GetAppVersion)
 		api.POST("/login", handlers.Login)
 
 		// 需要鉴权的路由
@@ -111,6 +112,9 @@ func main() {
 			auth.GET("/system-settings", handlers.GetSystemSettings)
 			auth.PUT("/system-settings/title", handlers.UpdateSystemTitle)
 			auth.PUT("/system-settings/account", handlers.UpdateAdminAccount)
+			auth.POST("/system-update/check", handlers.CheckSystemUpdate)
+			auth.POST("/system-update/probe", handlers.ProbeSystemUpdate)
+			auth.POST("/system-update/apply", handlers.ApplySystemUpdate)
 
 			// 代理管理
 			auth.GET("/proxies", handlers.GetProxyList)
