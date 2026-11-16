@@ -5,12 +5,18 @@ import (
 	"LabPanel/handlers"
 	"LabPanel/middleware"
 	"LabPanel/service"
+	"context"
+	"errors"
 	"fmt"
 	"html"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,6 +40,18 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
+	}
+	// Reserve the panel port before restoring forwards so a saved rule cannot
+	// claim the management endpoint and prevent access to the panel.
+	listener, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		log.Fatalf("监听面板端口失败: %v", err)
+	}
+	defer listener.Close()
+	if err := service.InitPortForwardService(cfg.PortForwardsPath); err != nil {
+		log.Printf("初始化端口转发失败: %v", err)
+	} else {
+		defer service.GetPortForwardService().Close()
 	}
 	if err := service.InitMetricsStore(cfg.MetricsDBPath, cfg.MetricsRetentionDays); err != nil {
 		log.Fatalf("初始化监控数据存储失败: %v", err)
@@ -100,6 +118,12 @@ func main() {
 			auth.PUT("/proxies", handlers.UpdateProxy)
 			auth.DELETE("/proxies", handlers.DeleteProxy)
 
+			// 宿主机端口转发（独立于 FRP）
+			auth.GET("/port-forwards", handlers.GetPortForwards)
+			auth.POST("/port-forwards", handlers.CreatePortForward)
+			auth.PUT("/port-forwards/:id", handlers.UpdatePortForward)
+			auth.DELETE("/port-forwards/:id", handlers.DeletePortForward)
+
 			// 基础配置更新
 			auth.PUT("/config/base", handlers.UpdateBaseConfig)
 
@@ -157,9 +181,24 @@ func main() {
 	})
 
 	log.Printf("服务器启动在端口 %s", cfg.Port)
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("服务器启动失败: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	server := &http.Server{Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("关闭 HTTP 服务失败: %v", err)
+		}
+	}()
+	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("服务器运行失败: %v", err)
 	}
+	stop()
+	<-shutdownDone
 }
 
 func serveIndexHTML(c *gin.Context) {

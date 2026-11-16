@@ -24,6 +24,14 @@ LabPanel 是一个为个人服务器、开发机和小型实验室环境准备�
 - 保存配置后重载服务。
 - FRP 未安装或配置缺失时显示检查结果和处理指引。
 
+### 宿主机端口转发
+
+- 在宿主机监听 TCP 或 UDP 端口，转发到容器 IP 或任意可达的 IP／域名。
+- 自定义监听地址、宿主机端口和目标端口，支持 IPv4、IPv6。
+- 在独立的“端口转发”页面添加、编辑、启停和删除规则。
+- 配置独立保存，LabPanel 重启后自动恢复已启用的规则。
+- 此功能直接映射到 LabPanel 所在宿主机，不依赖 FRP；FRP 则映射到 FRP 服务端。
+
 ### LXC/LXD 容器管理
 
 - 创建、启动、停止、强制停止、重启、删除容器。
@@ -154,6 +162,7 @@ DOCS_PATH=./docs
 UPLOAD_PATH=./uploads
 LXC_BACKUP_DIR=./backups
 LXC_GROUPS_PATH=./lxc_groups.json
+PORT_FORWARDS_PATH=./data/port_forwards.json
 METRICS_DB_PATH=./data/metrics.db
 METRICS_RETENTION_DAYS=30
 LXC_IMAGE=ubuntu:22.04
@@ -168,6 +177,7 @@ LXC_IMAGE=ubuntu:22.04
 - `TOML_PATH`: `frpc.toml` 路径。
 - `FRPC_PATH`: `frpc` 可执行文件路径。
 - `LXC_IMAGE`: 创建容器时使用的默认镜像。
+- `PORT_FORWARDS_PATH`: 宿主机端口转发规则的 JSON 文件路径。
 - `METRICS_RETENTION_DAYS`: 监控数据保留天数，`0` 表示不自动清理。
 
 旧版 `.env` 如果仍包含 `ADMIN_PASSWORD`，LabPanel 启动时会自动生成 `ADMIN_HASHED_PASSWORD` 并删除明文密码。
@@ -177,6 +187,24 @@ LXC_IMAGE=ubuntu:22.04
 ```bash
 ./LabPanel hash-password 'your-new-password'
 ```
+
+## 使用宿主机端口转发
+
+进入“端口转发”，新增规则。例如将宿主机的 `18080` 端口转发到容器 `10.0.3.10` 的 `8080` 端口：
+
+```text
+协议：TCP
+宿主机监听地址：0.0.0.0
+宿主机监听端口：18080
+目标地址：10.0.3.10
+目标端口：8080
+```
+
+启用后，通过 `宿主机IP:18080` 访问容器服务。目标地址也可以填写其他可达的 IP 或域名，端口单独填写。`0.0.0.0` 监听所有 IPv4 网卡；只允许本机访问时填写 `127.0.0.1`，IPv6 可填写 `::` 或具体 IPv6 地址。
+
+LabPanel 所在主机需要能访问目标服务，外部访问需要宿主机防火墙放行监听端口。如果 LabPanel 本身运行在容器中，需使用宿主机网络或将监听端口发布到宿主机。
+
+“运行中”表示监听已启动，目标服务的连通性取决于实际连接。启动时端口被占用的规则会显示错误，释放端口后可重新启用或编辑保存以重试。转发随 LabPanel 运行，停止 LabPanel 会停止转发。
 
 ## FRP 要求
 

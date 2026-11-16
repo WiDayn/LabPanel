@@ -24,6 +24,14 @@ It is designed for people who frequently expose local services through FRP, spin
 - Reload the service after saving configuration.
 - Show actionable checks when FRP is missing or misconfigured.
 
+### Host Port Forwarding
+
+- Listen on a host TCP or UDP port and forward traffic to a container IP or any reachable IP address or hostname.
+- Configure the listening address, host port, and destination port, with IPv4 and IPv6 support.
+- Add, edit, enable, disable, and delete rules on the separate Port Forwarding page.
+- Store rules independently and restore enabled rules when LabPanel restarts.
+- Forward directly through the host running LabPanel without FRP. FRP mappings expose ports on the FRP server.
+
 ### LXC/LXD Container Management
 
 - Create, start, stop, force stop, restart, and delete containers.
@@ -154,6 +162,7 @@ DOCS_PATH=./docs
 UPLOAD_PATH=./uploads
 LXC_BACKUP_DIR=./backups
 LXC_GROUPS_PATH=./lxc_groups.json
+PORT_FORWARDS_PATH=./data/port_forwards.json
 METRICS_DB_PATH=./data/metrics.db
 METRICS_RETENTION_DAYS=30
 LXC_IMAGE=ubuntu:22.04
@@ -168,6 +177,7 @@ Important options:
 - `TOML_PATH`: Path to `frpc.toml`.
 - `FRPC_PATH`: Path to the `frpc` executable.
 - `LXC_IMAGE`: Default image for new containers.
+- `PORT_FORWARDS_PATH`: Path to the JSON file storing host port forwarding rules.
 - `METRICS_RETENTION_DAYS`: Metrics retention period. Use `0` to disable automatic cleanup.
 
 If an older `.env` still contains `ADMIN_PASSWORD`, LabPanel migrates it to `ADMIN_HASHED_PASSWORD` on startup and removes the plaintext value.
@@ -177,6 +187,24 @@ Generate a password hash manually:
 ```bash
 ./LabPanel hash-password 'your-new-password'
 ```
+
+## Using Host Port Forwarding
+
+Open Port Forwarding and add a rule. For example, forward host port `18080` to port `8080` on container `10.0.3.10`:
+
+```text
+Protocol: TCP
+Host listening address: 0.0.0.0
+Host listening port: 18080
+Destination address: 10.0.3.10
+Destination port: 8080
+```
+
+Enable the rule, then access the container service at `HOST_IP:18080`. The destination can also be another reachable IP address or hostname; enter the port separately. `0.0.0.0` listens on all IPv4 interfaces. Use `127.0.0.1` for local access only, or `::` or a specific IPv6 address for IPv6.
+
+The host running LabPanel must be able to reach the destination service, and its firewall must allow the listening port for external access. If LabPanel itself runs in a container, use host networking or publish the listening port to the host.
+
+A Running status means the listener has started; destination connectivity is determined when traffic arrives. Rules whose ports are occupied at startup display an error. After freeing the port, enable the rule again or edit and save it to retry. Forwarding runs with LabPanel and stops when LabPanel stops.
 
 ## FRP Requirements
 

@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
+import PortForwards from './views/PortForwards.vue'
 import Lxc from './views/Lxc.vue'
 import Docker from './views/Docker.vue'
 import HostMonitor from './views/HostMonitor.vue'
@@ -17,6 +18,7 @@ const routes = [
   { path: '/', redirect: '/overview' },
   { path: '/login', name: 'Login', component: Login },
   { path: '/dashboard', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
+  { path: '/port-forwards', name: 'PortForwards', component: PortForwards, meta: { requiresAuth: true } },
   { path: '/lxc', name: 'Lxc', component: Lxc, meta: { requiresAuth: true } },
   { path: '/docker', name: 'Docker', component: Docker, meta: { requiresAuth: true } },
   { path: '/overview', name: 'HostMonitor', component: HostMonitor, meta: { requiresAuth: true } },
