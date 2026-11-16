@@ -34,10 +34,14 @@ type LxcMetricsService struct {
 }
 
 type lxcMetricsRaw struct {
+	Key            string
 	Name           string
+	RuntimeType    string
+	RuntimeLabel   string
 	State          string
 	Timestamp      time.Time
 	CPUUsageNs     int64
+	CPUPercent     float64
 	MemoryBytes    int64
 	Processes      int64
 	NetworkRxBytes int64
@@ -49,8 +53,21 @@ type lxcMetricsRaw struct {
 
 type lxcMetricsSample struct {
 	models.LxcMetricsPoint
-	Name  string
-	State string
+	Key          string
+	Name         string
+	RuntimeType  string
+	RuntimeLabel string
+	State        string
+}
+
+type dockerStatsLine struct {
+	Container string `json:"Container"`
+	Name      string `json:"Name"`
+	CPUPerc   string `json:"CPUPerc"`
+	MemUsage  string `json:"MemUsage"`
+	NetIO     string `json:"NetIO"`
+	BlockIO   string `json:"BlockIO"`
+	PIDs      string `json:"PIDs"`
 }
 
 type lxdState struct {
@@ -141,7 +158,7 @@ func (s *LxcMetricsService) Collect() {
 	lxcService := NewLxcService()
 	containers, err := lxcService.ListContainers()
 	if err != nil {
-		return
+		containers = []models.LxcContainer{}
 	}
 
 	now := time.Now()
@@ -151,21 +168,40 @@ func (s *LxcMetricsService) Collect() {
 		if name == "" {
 			continue
 		}
-		seen[name] = struct{}{}
+		key := containerMetricsKey("lxc", name)
+		seen[key] = struct{}{}
 
 		raw, err := collectLxcMetricsRaw(name, now)
 		if err != nil {
 			raw = lxcMetricsRaw{
-				Name:      name,
-				State:     container.State,
-				Timestamp: now,
+				Key:          key,
+				Name:         name,
+				RuntimeType:  "lxc",
+				RuntimeLabel: "LXC",
+				State:        container.State,
+				Timestamp:    now,
 			}
 		}
+		raw.Key = key
+		raw.Name = name
+		raw.RuntimeType = "lxc"
+		raw.RuntimeLabel = "LXC"
 		if raw.State == "" {
 			raw.State = container.State
 		}
 
 		s.storeRaw(raw)
+	}
+
+	dockerRaws, err := collectDockerMetricsRaws(now)
+	if err == nil {
+		for _, raw := range dockerRaws {
+			if raw.Key == "" {
+				raw.Key = containerMetricsKey(raw.RuntimeType, raw.Name)
+			}
+			seen[raw.Key] = struct{}{}
+			s.storeRaw(raw)
+		}
 	}
 
 	s.pruneMissing(seen)
@@ -186,13 +222,16 @@ func (s *LxcMetricsService) Response(name, rangeKey string) models.LxcMetricsRes
 
 	s.mu.RLock()
 	summaries := make([]models.LxcMetricsContainerSummary, 0, len(s.history))
-	for containerName, samples := range s.history {
+	for key, samples := range s.history {
 		if len(samples) == 0 {
 			continue
 		}
 		latest := samples[len(samples)-1]
 		summaries = append(summaries, models.LxcMetricsContainerSummary{
-			Name:           containerName,
+			Key:            key,
+			Name:           latest.Name,
+			RuntimeType:    latest.RuntimeType,
+			RuntimeLabel:   latest.RuntimeLabel,
 			State:          latest.State,
 			UpdatedAt:      latest.Timestamp,
 			CPUPercent:     latest.CPUPercent,
@@ -210,18 +249,42 @@ func (s *LxcMetricsService) Response(name, rangeKey string) models.LxcMetricsRes
 		})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].RuntimeType != summaries[j].RuntimeType {
+			return summaries[i].RuntimeType < summaries[j].RuntimeType
+		}
 		return summaries[i].Name < summaries[j].Name
 	})
 
 	if name == "" && len(summaries) > 0 {
-		name = summaries[0].Name
+		name = summaries[0].Key
+	} else if name != "" {
+		if _, ok := s.history[name]; !ok && !strings.Contains(name, ":") {
+			if _, ok := s.history[containerMetricsKey("lxc", name)]; ok {
+				name = containerMetricsKey("lxc", name)
+			}
+		}
 	}
 
 	var selected *models.LxcMetricsSeries
 	if name != "" {
 		rawPoints := filterMetricsSince(s.history[name], since)
 		points := downsampleMetrics(rawPoints, lxcMetricsMaxPoints)
-		selected = &models.LxcMetricsSeries{Name: name, Points: points}
+		seriesName := name
+		runtimeType := ""
+		runtimeLabel := ""
+		if samples := s.history[name]; len(samples) > 0 {
+			latest := samples[len(samples)-1]
+			seriesName = latest.Name
+			runtimeType = latest.RuntimeType
+			runtimeLabel = latest.RuntimeLabel
+		}
+		selected = &models.LxcMetricsSeries{
+			Key:          name,
+			Name:         seriesName,
+			RuntimeType:  runtimeType,
+			RuntimeLabel: runtimeLabel,
+			Points:       points,
+		}
 	}
 	s.mu.RUnlock()
 
@@ -230,6 +293,7 @@ func (s *LxcMetricsService) Response(name, rangeKey string) models.LxcMetricsRes
 		IntervalSeconds: int(lxcMetricsSampleInterval.Seconds()),
 		Containers:      summaries,
 		Selected:        selected,
+		Docker:          NewDockerService().Check(),
 	}
 }
 
@@ -247,17 +311,35 @@ func (s *LxcMetricsService) storeRaw(raw lxcMetricsRaw) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	previous, hasPrevious := s.lastRaw[raw.Name]
-	s.lastRaw[raw.Name] = raw
-	if store := GetMetricsStore(); store != nil {
-		_ = store.SaveLxcRaw(raw)
+	if raw.RuntimeType == "" {
+		raw.RuntimeType = "lxc"
+	}
+	if raw.RuntimeLabel == "" {
+		raw.RuntimeLabel = strings.ToUpper(raw.RuntimeType)
+	}
+	if raw.Key == "" {
+		raw.Key = containerMetricsKey(raw.RuntimeType, raw.Name)
+	}
+
+	previous, hasPrevious := s.lastRaw[raw.Key]
+	s.lastRaw[raw.Key] = raw
+	if raw.RuntimeType == "lxc" {
+		storeRaw := raw
+		storeRaw.Name = raw.Name
+		if store := GetMetricsStore(); store != nil {
+			_ = store.SaveLxcRaw(storeRaw)
+		}
 	}
 
 	sample := lxcMetricsSample{
-		Name:  raw.Name,
-		State: raw.State,
+		Key:          raw.Key,
+		Name:         raw.Name,
+		RuntimeType:  raw.RuntimeType,
+		RuntimeLabel: raw.RuntimeLabel,
+		State:        raw.State,
 		LxcMetricsPoint: models.LxcMetricsPoint{
 			Timestamp:      raw.Timestamp,
+			CPUPercent:     raw.CPUPercent,
 			MemoryBytes:    raw.MemoryBytes,
 			Processes:      raw.Processes,
 			DiskUsageBytes: raw.DiskUsageBytes,
@@ -268,11 +350,18 @@ func (s *LxcMetricsService) storeRaw(raw lxcMetricsRaw) {
 		},
 	}
 
+	if raw.RuntimeType == "lxc" {
+		sample.CPUPercent = 0
+		if !hasPrevious {
+			sample.CPUPercent = raw.CPUPercent
+		}
+	}
+
 	if hasPrevious && raw.Timestamp.After(previous.Timestamp) {
 		elapsed := raw.Timestamp.Sub(previous.Timestamp).Seconds()
 		if elapsed > 0 {
 			cpuDelta := raw.CPUUsageNs - previous.CPUUsageNs
-			if cpuDelta >= 0 {
+			if raw.RuntimeType == "lxc" && cpuDelta >= 0 {
 				sample.CPUPercent = clampFloat(float64(cpuDelta)/1e9/elapsed/float64(runtime.NumCPU())*100, 0, 100)
 			}
 			sample.NetworkRxBps = positiveRate(raw.NetworkRxBytes, previous.NetworkRxBytes, elapsed)
@@ -282,7 +371,7 @@ func (s *LxcMetricsService) storeRaw(raw lxcMetricsRaw) {
 		}
 	}
 
-	history := s.history[raw.Name]
+	history := s.history[raw.Key]
 	if len(history) > 0 && sameLxcMetricsSample(history[len(history)-1], sample) {
 		return
 	}
@@ -293,9 +382,11 @@ func (s *LxcMetricsService) storeRaw(raw lxcMetricsRaw) {
 	for start < len(history) && history[start].Timestamp.Before(cutoff) {
 		start++
 	}
-	s.history[raw.Name] = history[start:]
-	if store := GetMetricsStore(); store != nil {
-		_ = store.InsertLxcMetric(sample)
+	s.history[raw.Key] = history[start:]
+	if raw.RuntimeType == "lxc" {
+		if store := GetMetricsStore(); store != nil {
+			_ = store.InsertLxcMetric(sample)
+		}
 	}
 }
 
@@ -316,13 +407,32 @@ func (s *LxcMetricsService) restoreFromStore() {
 	for name, raw := range rawStates {
 		if raw.Timestamp.IsZero() || time.Since(raw.Timestamp) > 5*lxcMetricsSampleInterval {
 			delete(rawStates, name)
+			continue
 		}
+		raw.Key = containerMetricsKey("lxc", raw.Name)
+		raw.RuntimeType = "lxc"
+		raw.RuntimeLabel = "LXC"
+		rawStates[raw.Key] = raw
+		if raw.Key != name {
+			delete(rawStates, name)
+		}
+	}
+	normalizedHistory := make(map[string][]lxcMetricsSample, len(history))
+	for name, samples := range history {
+		key := containerMetricsKey("lxc", name)
+		for index := range samples {
+			samples[index].Key = key
+			samples[index].Name = name
+			samples[index].RuntimeType = "lxc"
+			samples[index].RuntimeLabel = "LXC"
+		}
+		normalizedHistory[key] = samples
 	}
 
 	s.mu.Lock()
-	s.history = history
+	s.history = normalizedHistory
 	s.lastRaw = rawStates
-	for _, samples := range history {
+	for _, samples := range normalizedHistory {
 		if len(samples) == 0 {
 			continue
 		}
@@ -358,8 +468,15 @@ func (s *LxcMetricsService) pruneMissing(seen map[string]struct{}) {
 		if _, ok := seen[name]; !ok {
 			delete(s.history, name)
 			delete(s.lastRaw, name)
-			if store := GetMetricsStore(); store != nil {
-				_ = store.DeleteLxcRaw(name)
+			if strings.HasPrefix(name, "lxc:") {
+				rawName := strings.TrimPrefix(name, "lxc:")
+				if store := GetMetricsStore(); store != nil {
+					_ = store.DeleteLxcRaw(rawName)
+				}
+			} else if !strings.Contains(name, ":") {
+				if store := GetMetricsStore(); store != nil {
+					_ = store.DeleteLxcRaw(name)
+				}
 			}
 		}
 	}
@@ -377,12 +494,15 @@ func collectLxcMetricsRaw(name string, timestamp time.Time) (lxcMetricsRaw, erro
 	}
 
 	raw := lxcMetricsRaw{
-		Name:        name,
-		State:       state.Status,
-		Timestamp:   timestamp,
-		CPUUsageNs:  state.CPU.Usage,
-		MemoryBytes: state.Memory.Usage,
-		Processes:   state.Processes,
+		Key:          containerMetricsKey("lxc", name),
+		Name:         name,
+		RuntimeType:  "lxc",
+		RuntimeLabel: "LXC",
+		State:        state.Status,
+		Timestamp:    timestamp,
+		CPUUsageNs:   state.CPU.Usage,
+		MemoryBytes:  state.Memory.Usage,
+		Processes:    state.Processes,
 	}
 
 	for ifaceName, network := range state.Network {
@@ -403,6 +523,112 @@ func collectLxcMetricsRaw(name string, timestamp time.Time) (lxcMetricsRaw, erro
 	}
 
 	return raw, nil
+}
+
+func collectDockerMetricsRaws(timestamp time.Time) ([]lxcMetricsRaw, error) {
+	check := NewDockerService().Check()
+	if !check.Ready {
+		return nil, fmt.Errorf(check.Message)
+	}
+
+	containers, err := NewDockerService().ListContainers()
+	if err != nil {
+		return nil, err
+	}
+	stateByName := make(map[string]string, len(containers))
+	for _, container := range containers {
+		stateByName[container.Name] = container.State
+	}
+
+	output, err := exec.Command("docker", "stats", "--no-stream", "--format", "{{json .}}").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("读取 Docker stats 失败: %v, 输出: %s", err, string(output))
+	}
+
+	var stats []dockerStatsLine
+	if err := parseDockerJSONLines(output, &stats); err != nil {
+		return nil, err
+	}
+
+	raws := make([]lxcMetricsRaw, 0, len(stats))
+	for _, stat := range stats {
+		name := strings.TrimSpace(stat.Name)
+		if name == "" {
+			name = strings.TrimSpace(stat.Container)
+		}
+		if name == "" {
+			continue
+		}
+		networkRx, networkTx := parseDockerPairBytes(stat.NetIO)
+		diskRead, diskWrite := parseDockerPairBytes(stat.BlockIO)
+		raws = append(raws, lxcMetricsRaw{
+			Key:            containerMetricsKey("docker", name),
+			Name:           name,
+			RuntimeType:    "docker",
+			RuntimeLabel:   "Docker",
+			State:          firstNonEmptyString(stateByName[name], "Running"),
+			Timestamp:      timestamp,
+			CPUPercent:     parseDockerPercent(stat.CPUPerc),
+			MemoryBytes:    parseDockerFirstBytes(stat.MemUsage),
+			Processes:      parseDockerInt(stat.PIDs),
+			NetworkRxBytes: networkRx,
+			NetworkTxBytes: networkTx,
+			DiskReadBytes:  diskRead,
+			DiskWriteBytes: diskWrite,
+		})
+	}
+	return raws, nil
+}
+
+func containerMetricsKey(runtimeType, name string) string {
+	runtimeType = strings.ToLower(strings.TrimSpace(runtimeType))
+	name = strings.TrimSpace(name)
+	if runtimeType == "" {
+		runtimeType = "lxc"
+	}
+	return runtimeType + ":" + name
+}
+
+func parseDockerPercent(value string) float64 {
+	value = strings.TrimSpace(strings.TrimSuffix(value, "%"))
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return clampFloat(parsed, 0, 100)
+}
+
+func parseDockerFirstBytes(value string) int64 {
+	parts := strings.Split(value, "/")
+	if len(parts) == 0 {
+		return 0
+	}
+	return parseByteSize(strings.TrimSpace(parts[0]))
+}
+
+func parseDockerPairBytes(value string) (int64, int64) {
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	return parseByteSize(strings.TrimSpace(parts[0])), parseByteSize(strings.TrimSpace(parts[1]))
+}
+
+func parseDockerInt(value string) int64 {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func fallbackDiskUsageBytes(name string) int64 {

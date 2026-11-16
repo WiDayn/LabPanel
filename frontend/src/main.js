@@ -4,6 +4,7 @@ import App from './App.vue'
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import Lxc from './views/Lxc.vue'
+import Docker from './views/Docker.vue'
 import HostMonitor from './views/HostMonitor.vue'
 import LxcMonitor from './views/LxcMonitor.vue'
 import GpuMonitor from './views/GpuMonitor.vue'
@@ -17,6 +18,7 @@ const routes = [
   { path: '/login', name: 'Login', component: Login },
   { path: '/dashboard', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
   { path: '/lxc', name: 'Lxc', component: Lxc, meta: { requiresAuth: true } },
+  { path: '/docker', name: 'Docker', component: Docker, meta: { requiresAuth: true } },
   { path: '/overview', name: 'HostMonitor', component: HostMonitor, meta: { requiresAuth: true } },
   { path: '/lxc-monitor', name: 'LxcMonitor', component: LxcMonitor, meta: { requiresAuth: true } },
   { path: '/gpu-monitor', name: 'GpuMonitor', component: GpuMonitor, meta: { requiresAuth: true } },

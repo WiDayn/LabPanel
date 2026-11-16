@@ -124,6 +124,14 @@ func main() {
 			auth.PUT("/lxc/config", handlers.UpdateLxcContainerConfig)
 			auth.PUT("/lxc/password", handlers.ChangePasswordLxcContainer)
 
+			// Docker管理
+			auth.GET("/docker/list", handlers.GetDockerList)
+			auth.POST("/docker/start", handlers.StartDockerContainer)
+			auth.POST("/docker/stop", handlers.StopDockerContainer)
+			auth.POST("/docker/restart", handlers.RestartDockerContainer)
+			auth.DELETE("/docker/delete", handlers.DeleteDockerContainer)
+			auth.DELETE("/docker/images", handlers.DeleteDockerImage)
+
 			// 文档管理
 			auth.GET("/documents", handlers.GetDocumentList)
 			auth.GET("/documents/:id", handlers.GetDocument)

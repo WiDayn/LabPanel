@@ -184,7 +184,10 @@ type LxcMetricsPoint struct {
 }
 
 type LxcMetricsContainerSummary struct {
+	Key            string    `json:"key"`
 	Name           string    `json:"name"`
+	RuntimeType    string    `json:"runtimeType"`
+	RuntimeLabel   string    `json:"runtimeLabel"`
 	State          string    `json:"state"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 	CPUPercent     float64   `json:"cpuPercent"`
@@ -202,8 +205,11 @@ type LxcMetricsContainerSummary struct {
 }
 
 type LxcMetricsSeries struct {
-	Name   string            `json:"name"`
-	Points []LxcMetricsPoint `json:"points"`
+	Key          string            `json:"key"`
+	Name         string            `json:"name"`
+	RuntimeType  string            `json:"runtimeType"`
+	RuntimeLabel string            `json:"runtimeLabel"`
+	Points       []LxcMetricsPoint `json:"points"`
 }
 
 type LxcMetricsResponse struct {
@@ -211,4 +217,5 @@ type LxcMetricsResponse struct {
 	IntervalSeconds int                          `json:"intervalSeconds"`
 	Containers      []LxcMetricsContainerSummary `json:"containers"`
 	Selected        *LxcMetricsSeries            `json:"selected,omitempty"`
+	Docker          ComponentCheck               `json:"docker"`
 }

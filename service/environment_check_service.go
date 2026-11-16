@@ -21,8 +21,9 @@ func NewEnvironmentCheckService() *EnvironmentCheckService {
 
 func (s *EnvironmentCheckService) Check() models.EnvironmentCheckResponse {
 	return models.EnvironmentCheckResponse{
-		FRP: s.checkFRP(),
-		LXC: s.checkLXC(),
+		FRP:    s.checkFRP(),
+		LXC:    s.checkLXC(),
+		Docker: s.CheckDocker(),
 	}
 }
 
@@ -88,6 +89,35 @@ func (s *EnvironmentCheckService) checkLXC() models.ComponentCheck {
 
 	check.Message = "未检测到 LXC/LXD，请先安装后再使用容器管理"
 	check.Guides = s.buildLXCGuides()
+	return check
+}
+
+func (s *EnvironmentCheckService) CheckDocker() models.ComponentCheck {
+	check := models.ComponentCheck{
+		Name: "Docker",
+	}
+
+	if !s.commandExists("", "docker") {
+		check.MissingItems = append(check.MissingItems, "docker 命令行工具")
+		check.Message = "未检测到 Docker，请先安装 Docker Engine 后再使用 Docker 管理"
+		check.Guides = s.buildDockerGuides()
+		return check
+	}
+
+	check.Installed = true
+	output, err := exec.Command("docker", "info", "--format", "{{json .ServerVersion}}").CombinedOutput()
+	if err == nil {
+		check.Ready = true
+		check.Message = "Docker 环境已就绪"
+		return check
+	}
+
+	check.MissingItems = append(check.MissingItems, "Docker daemon 或当前用户访问权限")
+	check.Message = "已检测到 docker 命令，但无法连接 Docker daemon"
+	check.Guides = s.buildDockerGuides()
+	if strings.TrimSpace(string(output)) != "" {
+		check.Message += "：" + strings.TrimSpace(string(output))
+	}
 	return check
 }
 
@@ -230,6 +260,55 @@ func (s *EnvironmentCheckService) buildLXCGuides() []models.InstallGuide {
 		{
 			Title:       "LXC/LXD 安装",
 			Description: "容器管理页面依赖 `lxc` 命令。Ubuntu 24.04 等新版本已不再通过 apt 提供 lxd/lxd-client，推荐使用 snap 安装 LXD。安装完成后刷新页面即可读取容器列表。",
+			Commands:    commands,
+		},
+	}
+}
+
+func (s *EnvironmentCheckService) buildDockerGuides() []models.InstallGuide {
+	osID := s.detectOSID()
+	commands := []models.InstallCommand{}
+
+	switch osID {
+	case "ubuntu", "debian":
+		commands = append(commands,
+			models.InstallCommand{
+				Label:   "安装 Docker Engine",
+				Command: "curl -fsSL https://get.docker.com | sudo sh",
+			},
+			models.InstallCommand{
+				Label:   "启动 Docker 服务",
+				Command: "sudo systemctl enable --now docker",
+			},
+			models.InstallCommand{
+				Label:   "授予当前用户访问权限",
+				Command: "getent group docker | grep -qwF \"$USER\" || sudo usermod -aG docker \"$USER\"",
+			},
+		)
+	case "centos", "rhel", "rocky", "almalinux", "fedora":
+		commands = append(commands,
+			models.InstallCommand{
+				Label:   "安装 Docker",
+				Command: "sudo dnf install -y docker-ce docker-ce-cli containerd.io || sudo yum install -y docker docker-cli containerd.io",
+			},
+			models.InstallCommand{
+				Label:   "启动 Docker 服务",
+				Command: "sudo systemctl enable --now docker",
+			},
+		)
+	default:
+		commands = append(commands,
+			models.InstallCommand{
+				Label:   "安装 Docker",
+				Command: "请按当前发行版安装 Docker Engine，并确认 `docker info` 可直接执行",
+			},
+		)
+	}
+
+	return []models.InstallGuide{
+		{
+			Title:       "Docker 安装与初始化",
+			Description: "Docker 管理页面依赖 `docker` 命令和可访问的 Docker daemon。安装完成并确认当前用户有权限后，刷新页面即可读取镜像和容器列表。",
 			Commands:    commands,
 		},
 	}

@@ -64,6 +64,7 @@ type ComponentCheck struct {
 }
 
 type EnvironmentCheckResponse struct {
-	FRP ComponentCheck `json:"frp"`
-	LXC ComponentCheck `json:"lxc"`
+	FRP    ComponentCheck `json:"frp"`
+	LXC    ComponentCheck `json:"lxc"`
+	Docker ComponentCheck `json:"docker"`
 }

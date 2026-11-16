@@ -17,15 +17,23 @@
             <div class="mt-4 space-y-2">
               <button
                 v-for="container in containers"
-                :key="container.name"
+                :key="container.key || container.name"
                 type="button"
                 class="w-full rounded-md border p-3 text-left transition-colors"
-                :class="currentName === container.name ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'"
-                @click="selectContainer(container.name)"
+                :class="currentKey === (container.key || container.name) ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'"
+                @click="selectContainer(container.key || container.name)"
               >
                 <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="truncate text-sm font-medium text-gray-900">{{ container.name }}</div>
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span
+                        class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                        :class="container.runtimeType === 'docker' ? 'bg-sky-100 text-sky-700' : 'bg-indigo-100 text-indigo-700'"
+                      >
+                        {{ container.runtimeLabel || runtimeLabel(container.runtimeType) }}
+                      </span>
+                      <div class="truncate text-sm font-medium text-gray-900">{{ container.name }}</div>
+                    </div>
                     <div class="mt-1 text-xs text-gray-500">{{ formatTime(container.updatedAt) }}</div>
                   </div>
                   <span
@@ -55,7 +63,9 @@
               <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 class="text-base font-semibold">{{ currentName || '未选择容器' }}</h2>
-                  <p class="mt-1 text-sm text-gray-600">刷新时间: {{ formatTime(currentSummary?.updatedAt) }}</p>
+                  <p class="mt-1 text-sm text-gray-600">
+                    {{ currentSummary?.runtimeLabel || runtimeLabel(currentSummary?.runtimeType) }} · 刷新时间: {{ formatTime(currentSummary?.updatedAt) }}
+                  </p>
                 </div>
                 <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
                   <div class="flex rounded-md border border-gray-300 bg-white p-1">
@@ -283,9 +293,10 @@ const rangeOptions = [
 ]
 
 const containers = computed(() => metrics.value.containers || [])
-const currentName = computed(() => metrics.value.selected?.name || selectedName.value || containers.value[0]?.name || '')
+const currentKey = computed(() => metrics.value.selected?.key || selectedName.value || containers.value[0]?.key || containers.value[0]?.name || '')
+const currentName = computed(() => metrics.value.selected?.name || currentSummary.value?.name || '')
 const seriesPoints = computed(() => metrics.value.selected?.points || [])
-const currentSummary = computed(() => containers.value.find((container) => container.name === currentName.value))
+const currentSummary = computed(() => containers.value.find((container) => (container.key || container.name) === currentKey.value))
 
 const loadMetrics = async () => {
   loading.value = true
@@ -298,8 +309,8 @@ const loadMetrics = async () => {
       },
     })
     metrics.value = response.data || { containers: [], selected: null, intervalSeconds: 60 }
-    if (!selectedName.value && metrics.value.selected?.name) {
-      selectedName.value = metrics.value.selected.name
+    if (!selectedName.value && metrics.value.selected?.key) {
+      selectedName.value = metrics.value.selected.key
     }
   } catch (err) {
     error.value = err.response?.data?.error || '加载容器监控失败'
@@ -340,6 +351,12 @@ const formatTime = (value) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const runtimeLabel = (runtimeType) => {
+  if (runtimeType === 'docker') return 'Docker'
+  if (runtimeType === 'lxc') return 'LXC'
+  return '容器'
 }
 
 onMounted(() => {
