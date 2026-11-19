@@ -15,10 +15,13 @@ GIT_TRANSPORT_OVERRIDE="${GIT_TRANSPORT-}"
 GITHUB_ROUTE_OVERRIDE="${GITHUB_ROUTE-}"
 RUN_USER=""
 SELECTED_GITHUB_PROXY=""
-TMP_BINARY=""
-TMP_DIST=""
-BACKUP_BINARY=""
-BACKUP_DIST=""
+STAGE=""
+STAGED_CHECKOUT=""
+SERVICE_STOPPED=0
+ARTIFACTS_SWITCHING=0
+COMMITTED=0
+PRESERVE_STAGE=0
+SERVICE_WAS_ACTIVE=0
 
 log() {
     echo "[update] $*"
@@ -146,7 +149,15 @@ run_sudo() {
     if [ "$(id -u)" -eq 0 ]; then
         "$@"
     else
-        sudo -E "$@"
+        sudo -n -E "$@"
+    fi
+}
+
+app_systemctl() {
+    if [ "${APP_SYSTEMD_SCOPE:-system}" = user ]; then
+        systemctl --user "$@"
+    else
+        run_sudo systemctl "$@"
     fi
 }
 
@@ -216,131 +227,170 @@ configure_network() {
     fi
 }
 
-git_cmd() {
-    if [ -n "$SELECTED_GITHUB_PROXY" ]; then
-        run_user git \
-            -c "url.${SELECTED_GITHUB_PROXY}https://github.com/.insteadOf=https://github.com/" \
-            -c "url.${SELECTED_GITHUB_PROXY}https://github.com/.insteadOf=git@github.com:" \
-            "$@"
-    elif [ "$GIT_TRANSPORT" = "https" ]; then
-        run_user git \
-            -c "url.https://github.com/.insteadOf=git@github.com:" \
-            "$@"
-    else
-        run_user git "$@"
+fetch_target() {
+    local remote="$1" branch_ref="$2" remote_url github_path
+    remote_url="$(run_user git remote get-url "$remote")"
+    if [[ "$GIT_TRANSPORT" == https && "$remote_url" =~ (https://github\.com/|git@github\.com:|ssh://git@github\.com/)([^[:space:]]+)$ ]]; then
+        github_path="${BASH_REMATCH[2]}"
+        remote_url="${SELECTED_GITHUB_PROXY}https://github.com/${github_path}"
     fi
+    run_user env GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=8' \
+        timeout 90 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=15 fetch --no-tags -- "$remote_url" "$branch_ref"
 }
 
-
-service_exists() {
-    run_sudo systemctl cat "$1" >/dev/null 2>&1
+wait_for_version() {
+    local expected="$1" port="$2" response deadline
+    local pattern='"commit"[[:space:]]*:[[:space:]]*"'"${expected}"'"'
+    deadline=$((SECONDS + 30))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if app_systemctl is-active --quiet "$APP_SERVICE" &&
+            response="$(curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:${port}/api/version" 2>/dev/null)" &&
+            [[ "$response" =~ $pattern ]] &&
+            curl --noproxy '*' -fsS --max-time 2 -o /dev/null "http://127.0.0.1:${port}/"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
 }
 
-cleanup_temp_artifacts() {
-    [ -n "${TMP_BINARY:-}" ] && rm -f -- "$TMP_BINARY"
-    [ -n "${TMP_DIST:-}" ] && rm -rf -- "$TMP_DIST"
-}
-
-cleanup_backup_artifacts() {
-    [ -n "${BACKUP_BINARY:-}" ] && rm -f -- "$BACKUP_BINARY"
-    [ -n "${BACKUP_DIST:-}" ] && rm -rf -- "$BACKUP_DIST"
-}
-
-restore_previous_artifacts() {
-    log "恢复上一版构建产物..."
-    [ -f LabPanel ] && rm -f -- LabPanel
-    [ -d frontend/dist ] && rm -rf -- frontend/dist
-    [ -n "${BACKUP_BINARY:-}" ] && [ -f "$BACKUP_BINARY" ] && mv -- "$BACKUP_BINARY" LabPanel
-    [ -n "${BACKUP_DIST:-}" ] && [ -d "$BACKUP_DIST" ] && mv -- "$BACKUP_DIST" frontend/dist
-}
-
-install_built_artifacts() {
-    if [ ! -f "$TMP_BINARY" ]; then
-        log "未找到后端临时构建产物: $TMP_BINARY"
-        return 1
+finish_update() {
+    local result=$?
+    trap - EXIT
+    trap '' INT TERM HUP
+    set +e
+    if [ "$COMMITTED" = 0 ] && [ "$ARTIFACTS_SWITCHING" = 1 ]; then
+        log "更新失败，恢复上一版构建产物"
+        if [ "$START_SERVICES" = 1 ] && ! app_systemctl stop "$APP_SERVICE"; then
+            PRESERVE_STAGE=1
+        fi
+        if [ "$PRESERVE_STAGE" = 0 ]; then
+            if [ -e "$STAGE/old-binary" ]; then
+                mv -fT -- "$STAGE/old-binary" LabPanel || PRESERVE_STAGE=1
+            fi
+            if [ -d "$STAGE/old-dist" ]; then
+                if [ -d frontend/dist ]; then
+                    mv -T -- frontend/dist "$STAGE/failed-dist" || PRESERVE_STAGE=1
+                fi
+                mv -T -- "$STAGE/old-dist" frontend/dist || PRESERVE_STAGE=1
+            fi
+        fi
     fi
-    if [ ! -d "$TMP_DIST" ]; then
-        log "未找到前端临时构建产物: $TMP_DIST"
-        return 1
+    if [ "$COMMITTED" = 0 ] && [ "$SERVICE_STOPPED" = 1 ] && [ "$SERVICE_WAS_ACTIVE" = 1 ] && [ "$PRESERVE_STAGE" = 0 ]; then
+        app_systemctl start "$APP_SERVICE" || PRESERVE_STAGE=1
     fi
-
-    rm -f -- "$BACKUP_BINARY"
-    rm -rf -- "$BACKUP_DIST"
-    [ -f LabPanel ] && mv -- LabPanel "$BACKUP_BINARY"
-    [ -d frontend/dist ] && mv -- frontend/dist "$BACKUP_DIST"
-    mv -- "$TMP_BINARY" LabPanel
-    mv -- "$TMP_DIST" frontend/dist
-}
-
-restart_app_service() {
-    if [ "$START_SERVICES" != "1" ]; then
-        log "START_SERVICES=${START_SERVICES}，已跳过重启 services"
-        return 0
+    if [ "$PRESERVE_STAGE" = 1 ]; then
+        log "需要人工恢复，保留现场: ${STAGE}"
+        exit 1
     fi
-
-    if ! service_exists "$APP_SERVICE"; then
-        log "服务 ${APP_SERVICE}.service 不存在，请设置 APP_SERVICE 或先运行 install.sh"
-        return 1
+    if [ -n "$STAGED_CHECKOUT" ] && [ -d "$STAGED_CHECKOUT" ]; then
+        run_user git worktree remove --force "$STAGED_CHECKOUT" || log "保留构建目录: ${STAGED_CHECKOUT}"
     fi
-
-    log "重启 ${APP_SERVICE}.service..."
-    if ! run_sudo systemctl restart "$APP_SERVICE"; then
-        log "服务重启失败，开始回滚"
-        restore_previous_artifacts
-        run_sudo systemctl start "$APP_SERVICE" 2>/dev/null || true
-        return 1
+    if [ -n "$STAGE" ] && [ ! -d "$STAGED_CHECKOUT" ]; then
+        rm -rf -- "$STAGE"
     fi
-
-    if ! run_sudo systemctl is-active --quiet "$APP_SERVICE"; then
-        log "服务重启后未保持 active，开始回滚"
-        restore_previous_artifacts
-        run_sudo systemctl start "$APP_SERVICE" 2>/dev/null || true
-        return 1
-    fi
+    exit "$result"
 }
 
 main() {
-    local script_dir suffix
+    local script_dir git_dir branch remote branch_ref current target expected port
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     cd "$script_dir"
     detect_run_user "$script_dir"
     load_env
+    port="${PORT:-8080}"
+    if ! [[ "$APP_SERVICE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$ && "$port" =~ ^[0-9]{1,5}$ ]]; then
+        log "无效的服务名称或端口"
+        exit 1
+    fi
+    git_dir="$(run_user git rev-parse --path-format=absolute --git-common-dir)"
+    run_user touch -- "$git_dir/labpanel-update.lock"
+    exec 9<"$git_dir/labpanel-update.lock"
+    if ! flock -n 9; then
+        log "已有更新任务正在执行"
+        exit 1
+    fi
+    if [ -n "$(run_user git status --porcelain --untracked-files=no)" ]; then
+        log "工作区包含本地修改，请先处理后再更新"
+        exit 1
+    fi
+    local previous_stage
+    for previous_stage in .labpanel-release.*/; do
+        if [ -e "${previous_stage}old-binary" ] || [ -e "${previous_stage}old-dist" ]; then
+            log "发现未完成的版本切换，保留现场: ${previous_stage}"
+            exit 1
+        fi
+    done
+    branch="$(run_user git symbolic-ref --quiet --short HEAD)"
+    remote="$(run_user git config --get "branch.${branch}.remote" || printf '%s' origin)"
+    branch_ref="$(run_user git config --get "branch.${branch}.merge" || printf 'refs/heads/%s' "$branch")"
+    current="$(run_user git rev-parse HEAD)"
+    if [ ! -x LabPanel ] || [ ! -s frontend/dist/index.html ]; then
+        log "缺少可回滚的已部署版本，请先完成安装"
+        exit 1
+    fi
+    if [ "$START_SERVICES" = 1 ]; then
+        if [ "$(app_systemctl show "$APP_SERVICE" --value -p WorkingDirectory)" != "$script_dir" ]; then
+            log "${APP_SERVICE}.service 的工作目录与当前部署不一致"
+            exit 1
+        fi
+    fi
+
     configure_network
     select_github_route
-
-    if [ "$START_SERVICES" = "1" ] && ! service_exists "$APP_SERVICE"; then
-        log "服务 ${APP_SERVICE}.service 不存在，请设置 APP_SERVICE 或先运行 install.sh"
+    log "获取目标提交"
+    fetch_target "$remote" "$branch_ref"
+    target="$(run_user git rev-parse 'FETCH_HEAD^{commit}')"
+    expected="$(run_user git rev-parse --short=12 "$target")"
+    if ! run_user git merge-base --is-ancestor "$current" "$target"; then
+        log "本地提交领先或已与远端分叉，保留现有版本"
         exit 1
     fi
-
-    log "拉取最新代码..."
-    git_cmd pull --ff-only
-
-    suffix="$$"
-    TMP_BINARY=".LabPanel.update.${suffix}"
-    TMP_DIST="frontend/.dist-update.${suffix}"
-    BACKUP_BINARY=".LabPanel.backup.${suffix}"
-    BACKUP_DIST="frontend/.dist-backup.${suffix}"
-    trap cleanup_temp_artifacts EXIT
-    cleanup_temp_artifacts
-    cleanup_backup_artifacts
-
-    log "重新编译前后端..."
-    run_user env OUTPUT_BINARY="$TMP_BINARY" FRONTEND_OUT_DIR=".dist-update.${suffix}" bash ./build.sh
-
-    log "替换构建产物..."
-    install_built_artifacts
-
-    run_sudo systemctl daemon-reload
-    if ! restart_app_service; then
-        exit 1
+    if [ "$current" = "$target" ] && [ "$START_SERVICES" = 1 ] &&
+        [[ "$(curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:${port}/api/version" 2>/dev/null || true)" == *\"commit\":\""$expected"\"* ]]; then
+        log "运行版本已是 ${expected}"
+        return 0
     fi
 
-    cleanup_backup_artifacts
-    trap - EXIT
-    cleanup_temp_artifacts
+    STAGE="$(run_user mktemp -d -- "${script_dir}/.labpanel-release.XXXXXXXX")"
+    STAGED_CHECKOUT="$STAGE/source"
+    trap finish_update EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+    run_user git worktree add --detach "$STAGED_CHECKOUT" "$target"
+    log "构建 ${expected}"
+    run_user env APP_COMMIT="$expected" OUTPUT_BINARY=LabPanel FRONTEND_OUT_DIR=dist bash "$STAGED_CHECKOUT/build.sh"
+    test -x "$STAGED_CHECKOUT/LabPanel"
+    test -s "$STAGED_CHECKOUT/frontend/dist/index.html"
 
-    log "更新完成"
+    if [ "$(run_user git rev-parse HEAD)" != "$current" ] || [ -n "$(run_user git status --porcelain --untracked-files=no)" ]; then
+        log "构建期间工作区发生变化，停止部署"
+        exit 1
+    fi
+    if [ "$START_SERVICES" = 1 ]; then
+        if app_systemctl is-active --quiet "$APP_SERVICE"; then
+            SERVICE_WAS_ACTIVE=1
+        fi
+        SERVICE_STOPPED=1
+        app_systemctl stop "$APP_SERVICE"
+    fi
+    log "切换构建产物"
+    ARTIFACTS_SWITCHING=1
+    mv -T -- LabPanel "$STAGE/old-binary"
+    mv -T -- frontend/dist "$STAGE/old-dist"
+    mv -T -- "$STAGED_CHECKOUT/LabPanel" LabPanel
+    mv -T -- "$STAGED_CHECKOUT/frontend/dist" frontend/dist
+
+    if [ "$START_SERVICES" = 1 ]; then
+        app_systemctl start "$APP_SERVICE"
+        if ! wait_for_version "$expected" "$port"; then
+            log "新版本健康检查未通过: ${expected}"
+            exit 1
+        fi
+    fi
+    run_user git merge --ff-only "$target"
+    COMMITTED=1
+    log "更新完成: ${expected}"
 }
 
 main "$@"

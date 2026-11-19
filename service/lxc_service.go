@@ -90,6 +90,14 @@ func (s *LxcService) ListContainers() ([]models.LxcContainer, error) {
 		if container.Groups == nil {
 			container.Groups = []models.LxcGroup{}
 		}
+		if devices, ok := raw["expanded_devices"].(map[string]interface{}); ok {
+			for _, candidate := range devices {
+				if device, ok := candidate.(map[string]interface{}); ok && getString(device, "type") == "disk" && getString(device, "path") == "/" {
+					container.StoragePool = getString(device, "pool")
+					break
+				}
+			}
+		}
 
 		// 提取IP地址 - LXC的JSON格式中，网络信息可能在state字段下
 		if state, ok := raw["state"].(map[string]interface{}); ok {
@@ -183,6 +191,11 @@ func extractJSONArray(output []byte) ([]byte, error) {
 }
 
 func (s *LxcService) DeleteContainer(name string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := exec.Command("lxc", "delete", name, "--force")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -201,6 +214,11 @@ func (s *LxcService) DeleteContainer(name string) error {
 }
 
 func (s *LxcService) RestartContainer(name string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := exec.Command("lxc", "restart", name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -210,6 +228,11 @@ func (s *LxcService) RestartContainer(name string) error {
 }
 
 func (s *LxcService) StartContainer(name string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := exec.Command("lxc", "start", name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -219,6 +242,11 @@ func (s *LxcService) StartContainer(name string) error {
 }
 
 func (s *LxcService) StopContainer(name string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := exec.Command("lxc", "stop", name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -228,6 +256,11 @@ func (s *LxcService) StopContainer(name string) error {
 }
 
 func (s *LxcService) ForceStopContainer(name string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := exec.Command("lxc", "stop", name, "--force")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -248,6 +281,11 @@ func (s *LxcService) BackupContainer(name string) (string, error) {
 }
 
 func (s *LxcService) BackupContainerWithProgress(name string, progress func(stage, message string, percent int)) ([]string, error) {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	backupDir := "./backups"
 	if s.cfg != nil && strings.TrimSpace(s.cfg.LxcBackupDir) != "" {
 		backupDir = strings.TrimSpace(s.cfg.LxcBackupDir)
@@ -494,6 +532,11 @@ func (s *LxcService) GetContainerConfig(name string) (string, error) {
 }
 
 func (s *LxcService) UpdateContainerConfig(name, config string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	// LXC 配置更新比较复杂，因为 YAML 可能包含嵌套结构
 	// 我们使用一个简化的方法：解析 YAML 格式的配置，然后使用 lxc config set 逐个设置
 
@@ -675,6 +718,20 @@ func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
 	if password == "" {
 		return fmt.Errorf("Root 密码不能为空")
 	}
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
+	pool := strings.TrimSpace(req.StoragePool)
+	if pool == "" && s.cfg != nil {
+		pool = s.cfg.LxcStoragePool
+	}
+	if pool != "" {
+		if err := validateStoragePool(pool); err != nil {
+			return err
+		}
+	}
 	groupService := NewLxcGroupService()
 	if err := groupService.ValidateGroupIDs(req.GroupIDs); err != nil {
 		return err
@@ -689,12 +746,12 @@ func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
 				image = strings.TrimSpace(s.cfg.LxcImage)
 			}
 		}
-		if err := s.createContainerFromImage(name, password, image); err != nil {
+		if err := s.createContainerFromImage(name, password, image, pool); err != nil {
 			return err
 		}
 		return groupService.SetContainerGroups(name, req.GroupIDs)
 	case models.LxcCreateSourceBackup:
-		if err := s.createContainerFromBackup(name, password, strings.TrimSpace(req.BackupFile)); err != nil {
+		if err := s.createContainerFromBackup(name, password, strings.TrimSpace(req.BackupFile), pool); err != nil {
 			return err
 		}
 		return groupService.SetContainerGroups(name, req.GroupIDs)
@@ -703,9 +760,10 @@ func (s *LxcService) CreateContainer(req models.CreateLxcRequest) error {
 	}
 }
 
-func (s *LxcService) createContainerFromImage(name, password, image string) error {
+func (s *LxcService) createContainerFromImage(name, password, image, pool string) error {
 	// 1. 创建容器
-	cmd := exec.Command("lxc", "launch", image, name, "-c", "nvidia.runtime=true")
+	args := appendPoolFlag([]string{"launch", image, name, "-c", "nvidia.runtime=true"}, pool)
+	cmd := exec.Command("lxc", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		outputStr := string(output)
@@ -734,7 +792,7 @@ func (s *LxcService) createContainerFromImage(name, password, image string) erro
 	return nil
 }
 
-func (s *LxcService) createContainerFromBackup(targetName, password, backupFile string) error {
+func (s *LxcService) createContainerFromBackup(targetName, password, backupFile, pool string) error {
 	targetName = strings.TrimSpace(targetName)
 	if targetName == "" {
 		return fmt.Errorf("容器名称不能为空")
@@ -774,7 +832,7 @@ func (s *LxcService) createContainerFromBackup(targetName, password, backupFile 
 		return fmt.Errorf("清理同名残留资源失败: %v", err)
 	}
 
-	if err := s.importBackupWithTargetName(backupPath, targetName); err != nil {
+	if err := s.importBackupWithTargetName(backupPath, targetName, pool); err != nil {
 		return err
 	}
 
@@ -791,7 +849,7 @@ func (s *LxcService) createContainerFromBackup(targetName, password, backupFile 
 	return nil
 }
 
-func (s *LxcService) importBackupWithTargetName(backupPath, targetName string) error {
+func (s *LxcService) importBackupWithTargetName(backupPath, targetName, pool string) error {
 	macAddress, err := randomLxdMACAddress()
 	if err != nil {
 		return fmt.Errorf("生成新容器 MAC 地址失败: %v", err)
@@ -800,7 +858,8 @@ func (s *LxcService) importBackupWithTargetName(backupPath, targetName string) e
 	var lastErr error
 	var lastOutput string
 	for attempt := 0; attempt < 3; attempt++ {
-		output, err := exec.Command("lxc", "import", backupPath, targetName, "--device", "eth0,hwaddr="+macAddress).CombinedOutput()
+		args := appendPoolFlag([]string{"import", backupPath, targetName, "--device", "eth0,hwaddr=" + macAddress}, pool)
+		output, err := exec.Command("lxc", args...).CombinedOutput()
 		if err == nil {
 			return nil
 		}
@@ -817,6 +876,13 @@ func (s *LxcService) importBackupWithTargetName(backupPath, targetName string) e
 	}
 
 	return fmt.Errorf("从备份导入容器失败: %v, 输出: %s", lastErr, lastOutput)
+}
+
+func appendPoolFlag(args []string, pool string) []string {
+	if pool != "" {
+		return append(args, "--storage="+pool)
+	}
+	return args
 }
 
 func randomLxdMACAddress() (string, error) {
@@ -1396,6 +1462,11 @@ func (s *LxcService) setRootPassword(name, password string) error {
 
 // ChangePassword 修改容器的root密码
 func (s *LxcService) ChangePassword(name, password string) error {
+	release, err := lockLxcOperation(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	// 确保容器正在运行
 	if err := s.waitForContainerRunning(name, 30); err != nil {
 		return fmt.Errorf("容器未运行或无法访问: %v", err)

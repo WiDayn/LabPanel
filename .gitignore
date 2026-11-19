@@ -35,3 +35,4 @@ backups/*
 # Runtime data
 data/
 lxc_groups.json
+.labpanel-release.*/

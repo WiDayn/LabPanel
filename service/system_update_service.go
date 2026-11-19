@@ -2,6 +2,8 @@ package service
 
 import (
 	"LabPanel/models"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,7 +29,7 @@ func CheckSystemUpdate(source string) (models.SystemUpdateCheckResponse, error) 
 
 	current := GetAppVersion()
 	branch := firstNonEmpty(gitOutput("rev-parse", "--abbrev-ref", "HEAD"), "main")
-	localCommit := firstNonEmpty(gitOutput("rev-parse", "HEAD"), current.Commit)
+	localCommit := current.Commit
 	remoteCommit, err := remoteHeadCommit(remoteURL, branch)
 	if err != nil {
 		return models.SystemUpdateCheckResponse{}, err
@@ -88,16 +90,31 @@ func StartSystemUpdate(source string) (models.SystemUpdateApplyResponse, error) 
 		return models.SystemUpdateApplyResponse{}, err
 	}
 
-	unitName := fmt.Sprintf("lab-panel-update-%d", time.Now().Unix())
-	args := []string{
+	for _, migration := range ListLxcStorageMoves() {
+		if migration.Status == "running" {
+			return models.SystemUpdateApplyResponse{}, fmt.Errorf("容器 %s 正在迁移，请稍后更新", migration.Name)
+		}
+	}
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return models.SystemUpdateApplyResponse{}, err
+	}
+	unitName := "lab-panel-update-" + hex.EncodeToString(suffix[:])
+	args := []string{}
+	statusCommand := "systemctl status " + unitName
+	if os.Getenv("APP_SYSTEMD_SCOPE") == "user" {
+		args = append(args, "--user")
+		statusCommand = "systemctl --user status " + unitName
+	}
+	args = append(args,
 		"--unit", unitName,
 		"--collect",
-		"--property", "WorkingDirectory=" + workDir,
+		"--property", "WorkingDirectory="+workDir,
 		"--setenv", "GIT_TRANSPORT=https",
-		"--setenv", "GITHUB_ROUTE=" + updateRouteName(source),
-		"--setenv", "DEFAULT_GITHUB_PROXY=" + updateProxyPrefix(source),
+		"--setenv", "GITHUB_ROUTE="+updateRouteName(source),
+		"--setenv", "DEFAULT_GITHUB_PROXY="+updateProxyPrefix(source),
 		filepath.Join(workDir, "update.sh"),
-	}
+	)
 
 	cmd := exec.Command("systemd-run", args...)
 	output, err := cmd.CombinedOutput()
@@ -107,7 +124,7 @@ func StartSystemUpdate(source string) (models.SystemUpdateApplyResponse, error) 
 
 	return models.SystemUpdateApplyResponse{
 		Source:  source,
-		Command: "systemctl status " + unitName,
+		Command: statusCommand,
 		Message: "更新任务已启动",
 	}, nil
 }

@@ -122,6 +122,15 @@
           </div>
         </Card>
 
+        <LxcStorage
+          v-if="environmentCheck?.lxc.ready"
+          :containers="containers"
+          :target="moveTarget"
+          @pools="storagePools = $event"
+          @refresh="loadContainers"
+          @close="moveTarget = null"
+        />
+
         <!-- 容器列表卡片 -->
         <section
           v-if="environmentCheck?.lxc.ready !== false"
@@ -244,7 +253,10 @@
               </thead>
               <tbody>
                 <tr v-for="(container, index) in containers" :key="index" class="border-b last:border-b-0">
-                  <td class="truncate px-2 py-2 font-medium text-gray-900" :title="container.name">{{ container.name }}</td>
+                  <td class="px-2 py-2">
+                    <div class="truncate font-medium text-gray-900" :title="container.name">{{ container.name }}</div>
+                    <div v-if="container.storagePool" class="truncate text-xs text-gray-600" :title="container.storagePool">{{ container.storagePool }}</div>
+                  </td>
                   <td class="px-2 py-2">
                     <div class="flex max-w-full flex-wrap items-center gap-1">
                       <span
@@ -350,6 +362,14 @@
           分配分组
         </button>
         <button
+          v-if="activeActionContainer.type === 'container' && activeActionContainer.storagePool"
+          type="button"
+          class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50"
+          @click="runMenuAction(activeActionContainer, (container) => { moveTarget = container })"
+        >
+          迁移存储
+        </button>
+        <button
           type="button"
           class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50"
           @click="runMenuAction(activeActionContainer, (container) => changePassword(container.name))"
@@ -379,7 +399,7 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click.self="closeCreateDialog"
     >
-      <Card class="w-full max-w-md p-6 m-4">
+      <Card class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-6 m-4">
         <h3 class="text-lg font-semibold mb-4">新增容器</h3>
         <div v-if="creating" class="space-y-4">
           <div class="text-center py-8">
@@ -397,6 +417,13 @@
             <label class="block text-sm font-medium mb-2">容器名称</label>
             <Input v-model="newContainer.name" placeholder="请输入容器名称" />
           </div>
+          <label v-if="storagePools.length" class="block text-sm font-medium">
+            存储池
+            <select v-model="newContainer.storagePool" class="mt-2 block h-10 w-full rounded-md border border-gray-300 bg-white px-3">
+              <option value="">默认位置</option>
+              <option v-for="pool in storagePools" :key="pool.name" :value="pool.name">{{ pool.name }}</option>
+            </select>
+          </label>
           <div>
             <label class="block text-sm font-medium mb-2">分组</label>
             <div v-if="groups.length" class="-mx-1 mb-2 overflow-x-auto px-1 py-1.5">
@@ -679,8 +706,11 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import LxcStorage from '@/components/LxcStorage.vue'
 
 const containers = ref([])
+const storagePools = ref([])
+const moveTarget = ref(null)
 const environmentCheck = ref(null)
 const checkingEnvironment = ref(false)
 const loading = ref(false)
@@ -727,6 +757,7 @@ const newContainer = ref({
   sourceType: 'default_image',
   image: '',
   backupFile: '',
+  storagePool: '',
   groupIds: [],
   groupInput: '',
 })
@@ -856,7 +887,7 @@ const toggleActionMenu = (container, event) => {
   const rect = trigger?.getBoundingClientRect?.()
 
   if (rect) {
-    const menuHeight = container.state === 'Running' ? 224 : 188
+    const menuHeight = (container.state === 'Running' ? 224 : 188) + (container.type === 'container' && container.storagePool ? 36 : 0)
     const preferredLeft = rect.right + margin
     const fallbackLeft = rect.left - menuWidth - margin
     const preferredTop = rect.top
@@ -1189,6 +1220,7 @@ const createContainer = async () => {
       sourceType: newContainer.value.sourceType,
       image: newContainer.value.image,
       backupFile: newContainer.value.backupFile,
+      storagePool: newContainer.value.storagePool,
       groupIds,
     })
     if (newContainer.value.sourceType === 'backup' && response.data?.restore) {
@@ -1513,6 +1545,7 @@ const closeCreateDialog = () => {
     sourceType: 'default_image',
     image: '',
     backupFile: '',
+    storagePool: '',
     groupIds: [],
     groupInput: '',
   }
@@ -1529,6 +1562,7 @@ const openCreateDialog = async () => {
     sourceType: 'default_image',
     image: '',
     backupFile: '',
+    storagePool: '',
     groupIds: [],
     groupInput: '',
   }

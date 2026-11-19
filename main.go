@@ -43,7 +43,7 @@ func main() {
 	}
 	// Reserve the panel port before restoring forwards so a saved rule cannot
 	// claim the management endpoint and prevent access to the panel.
-	listener, err := net.Listen("tcp", ":"+cfg.Port)
+	listener, err := net.Listen("tcp", net.JoinHostPort(cfg.ListenAddress, cfg.Port))
 	if err != nil {
 		log.Fatalf("监听面板端口失败: %v", err)
 	}
@@ -133,6 +133,11 @@ func main() {
 
 			// LXC容器管理
 			auth.GET("/lxc/list", handlers.GetLxcList)
+			auth.GET("/lxc/storage", handlers.GetLxcStorage)
+			auth.POST("/lxc/storage/pools", handlers.CreateLxcStoragePool)
+			auth.GET("/lxc/storage/mounts/:name", handlers.GetLxcStorageMounts)
+			auth.GET("/lxc/storage/moves", handlers.GetLxcStorageMoves)
+			auth.POST("/lxc/storage/moves", handlers.StartLxcStorageMove)
 			auth.GET("/lxc/groups", handlers.GetLxcGroups)
 			auth.POST("/lxc/groups", handlers.CreateLxcGroup)
 			auth.PUT("/lxc/groups/container", handlers.UpdateLxcContainerGroups)

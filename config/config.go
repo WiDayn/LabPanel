@@ -13,6 +13,7 @@ import (
 type Config struct {
 	AppTitle             string
 	Port                 string
+	ListenAddress        string
 	JWTSecret            string
 	AdminUsername        string
 	AdminHashedPassword  string
@@ -24,6 +25,7 @@ type Config struct {
 	UploadPath           string
 	LxcImage             string
 	LxcBackupDir         string
+	LxcStoragePool       string
 	LxcGroupsPath        string
 	PortForwardsPath     string
 	MetricsDBPath        string
@@ -49,6 +51,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		AppTitle:             getEnv("APP_TITLE", "LabPanel 管理面板"),
 		Port:                 getEnv("PORT", "8080"),
+		ListenAddress:        strings.TrimSpace(os.Getenv("APP_LISTEN_ADDRESS")),
 		JWTSecret:            getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		AdminUsername:        getEnv("ADMIN_USERNAME", "admin"),
 		AdminHashedPassword:  getAdminHashedPassword(),
@@ -60,6 +63,7 @@ func Load() (*Config, error) {
 		UploadPath:           getEnv("UPLOAD_PATH", "./uploads"),
 		LxcImage:             getEnv("LXC_IMAGE", "ubuntu:22.04"),
 		LxcBackupDir:         getEnv("LXC_BACKUP_DIR", "./backups"),
+		LxcStoragePool:       strings.TrimSpace(os.Getenv("LXC_STORAGE_POOL")),
 		LxcGroupsPath:        getEnv("LXC_GROUPS_PATH", "./data/lxc_groups.json"),
 		PortForwardsPath:     getEnv("PORT_FORWARDS_PATH", "./data/port_forwards.json"),
 		MetricsDBPath:        getEnv("METRICS_DB_PATH", "./data/metrics.db"),

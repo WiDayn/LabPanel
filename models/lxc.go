@@ -9,14 +9,15 @@ const (
 )
 
 type LxcContainer struct {
-	Name     string     `json:"name"`
-	State    string     `json:"state"`
-	IPV4     string     `json:"ipv4"`
-	IPV6     string     `json:"ipv6"`
-	Type     string     `json:"type"`
-	Arch     string     `json:"arch"`
-	Profiles string     `json:"profiles"`
-	Groups   []LxcGroup `json:"groups"`
+	Name        string     `json:"name"`
+	State       string     `json:"state"`
+	IPV4        string     `json:"ipv4"`
+	IPV6        string     `json:"ipv6"`
+	Type        string     `json:"type"`
+	Arch        string     `json:"arch"`
+	Profiles    string     `json:"profiles"`
+	StoragePool string     `json:"storagePool"`
+	Groups      []LxcGroup `json:"groups"`
 }
 
 type LxcListResponse struct {
@@ -24,12 +25,13 @@ type LxcListResponse struct {
 }
 
 type CreateLxcRequest struct {
-	Name       string   `json:"name" binding:"required"`
-	Password   string   `json:"password" binding:"required"`
-	SourceType string   `json:"sourceType"`
-	Image      string   `json:"image"`
-	BackupFile string   `json:"backupFile"`
-	GroupIDs   []string `json:"groupIds"`
+	Name        string   `json:"name" binding:"required"`
+	Password    string   `json:"password" binding:"required"`
+	SourceType  string   `json:"sourceType"`
+	Image       string   `json:"image"`
+	BackupFile  string   `json:"backupFile"`
+	StoragePool string   `json:"storagePool"`
+	GroupIDs    []string `json:"groupIds"`
 }
 
 type LxcGroup struct {
