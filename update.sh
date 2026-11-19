@@ -362,6 +362,10 @@ main() {
     run_user env APP_COMMIT="$expected" OUTPUT_BINARY=LabPanel FRONTEND_OUT_DIR=dist bash "$STAGED_CHECKOUT/build.sh"
     test -x "$STAGED_CHECKOUT/LabPanel"
     test -s "$STAGED_CHECKOUT/frontend/dist/index.html"
+    if [ -f "$STAGED_CHECKOUT/service/frp_upgrade.go" ]; then
+        log "检查旧端口转发规则"
+        "$STAGED_CHECKOUT/LabPanel" check-frp-upgrade
+    fi
 
     if [ "$(run_user git rev-parse HEAD)" != "$current" ] || [ -n "$(run_user git status --porcelain --untracked-files=no)" ]; then
         log "构建期间工作区发生变化，停止部署"

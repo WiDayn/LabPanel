@@ -129,7 +129,7 @@
                   <tr class="border-b text-left text-xs text-gray-500">
                     <th class="px-2 py-2 font-medium">名称</th>
                     <th class="px-2 py-2 font-medium">类型</th>
-                    <th class="px-2 py-2 font-medium">本地IP</th>
+                    <th class="px-2 py-2 font-medium">目标</th>
                     <th class="px-2 py-2 font-medium">本地端口</th>
                     <th class="px-2 py-2 font-medium">映射地址</th>
                     <th class="px-2 py-2 font-medium">备注</th>
@@ -137,10 +137,18 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(proxy, index) in proxies" :key="index" class="border-b last:border-b-0">
+                  <tr v-for="(proxy, index) in proxies" :key="proxy.name" class="border-b last:border-b-0">
                     <td class="px-2 py-2 font-medium text-gray-900">{{ proxy.name }}</td>
                     <td class="px-2 py-2 text-gray-700">{{ proxy.type }}</td>
-                    <td class="px-2 py-2 text-gray-700">{{ proxy.localIP }}</td>
+                    <td class="px-2 py-2 text-gray-700">
+                      <div class="break-all">{{ proxy.binding?.container || proxy.localIP }}</div>
+                      <div v-if="proxy.binding" class="mt-1 break-all text-xs" :class="proxy.paused ? 'text-amber-800' : 'text-gray-600'">
+                        {{ proxy.paused ? '已暂停 · 地址归属未通过核验' : `${proxy.localIP} · ${proxy.binding.device}` }}
+                      </div>
+                      <div v-else class="mt-1 break-all text-xs text-gray-600">
+                        {{ proxy.candidate ? `待确认 · ${proxy.candidate}` : '手动目标' }}
+                      </div>
+                    </td>
                     <td class="px-2 py-2 text-gray-700">{{ proxy.localPort }}</td>
                     <td class="px-2 py-2 text-gray-900">
                       <span v-if="frpConfig.serverAddr">
@@ -170,7 +178,7 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click.self="closeDialog"
     >
-      <Card class="w-full max-w-md p-6 m-4">
+      <Card class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-6 m-4">
         <h3 class="text-lg font-semibold mb-4">
           {{ editingIndex !== null ? '编辑代理' : '新增代理' }}
         </h3>
@@ -184,8 +192,26 @@
             <Input v-model="currentProxy.type" placeholder="tcp" />
           </div>
           <div>
-            <label class="block text-sm font-medium mb-2">本地IP</label>
-            <Input v-model="currentProxy.localIP" placeholder="127.0.0.1" />
+            <label for="frp-target-mode" class="block text-sm font-medium mb-2">目标模式</label>
+            <select id="frp-target-mode" v-model="targetMode" class="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm" @change="loadTargets">
+              <option value="manual">手动目标</option>
+              <option value="container">绑定容器</option>
+            </select>
+          </div>
+          <div v-if="targetMode === 'manual'">
+            <label for="frp-target-address" class="block text-sm font-medium mb-2">目标地址</label>
+            <Input id="frp-target-address" v-model="currentProxy.localIP" placeholder="127.0.0.1" />
+          </div>
+          <div v-else>
+            <label for="frp-target-container" class="block text-sm font-medium mb-2">容器网卡</label>
+            <select id="frp-target-container" v-model="selectedTarget" class="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm" :disabled="loadingTargets">
+              <option :value="null" disabled>{{ loadingTargets ? '正在读取…' : '请选择容器网卡' }}</option>
+              <option v-for="target in containerTargets" :key="`${target.instanceId}/${target.device}/${target.address}`" :value="target">
+                {{ target.container }} · {{ target.device }} · {{ target.address }}
+              </option>
+            </select>
+            <p v-if="targetError" class="mt-2 text-sm text-red-700" role="alert">{{ targetError }}</p>
+            <p v-else-if="!loadingTargets && !containerTargets.length" class="mt-2 text-sm text-gray-600">没有运行中的 LXD 容器网卡可供绑定。</p>
           </div>
           <div>
             <label class="block text-sm font-medium mb-2">本地端口</label>
@@ -199,9 +225,10 @@
             <label class="block text-sm font-medium mb-2">备注</label>
             <Input v-model="currentProxy.comment" placeholder="可选，用于记录此映射的说明" />
           </div>
+          <p v-if="error" role="alert" class="break-words text-sm text-red-700">{{ error }}</p>
           <div class="flex gap-2 justify-end">
             <Button variant="outline" @click="closeDialog" :disabled="submitting">取消</Button>
-            <Button @click="saveProxy" :disabled="submitting">
+            <Button @click="saveProxy" :disabled="submitting || (targetMode === 'container' && (!selectedTarget || loadingTargets))">
               {{ submitting ? '保存中...' : '保存' }}
             </Button>
           </div>
@@ -232,6 +259,12 @@ const error = ref('')
 const success = ref('')
 const showAddDialog = ref(false)
 const editingIndex = ref(null)
+const originalName = ref('')
+const targetMode = ref('manual')
+const selectedTarget = ref(null)
+const containerTargets = ref([])
+const loadingTargets = ref(false)
+const targetError = ref('')
 const currentProxy = ref({
   name: '',
   type: 'tcp',
@@ -268,6 +301,28 @@ const loadProxies = async () => {
   }
 }
 
+const loadTargets = async () => {
+  if (targetMode.value !== 'container') return
+  loadingTargets.value = true
+  selectedTarget.value = null
+  targetError.value = ''
+  try {
+    const response = await api.get('/proxies/container-targets', { timeout: 15000 })
+    containerTargets.value = response.data.targets || []
+    const binding = currentProxy.value.binding
+    if (binding) {
+      selectedTarget.value = containerTargets.value.find(target =>
+        target.instanceId === binding.instanceId && target.device === binding.device && target.address === binding.address
+      ) || null
+    }
+  } catch (err) {
+    containerTargets.value = []
+    targetError.value = err.response?.data?.error || '无法读取容器网卡'
+  } finally {
+    loadingTargets.value = false
+  }
+}
+
 const refreshStatus = async () => {
   if (environmentCheck.value && !environmentCheck.value.frp.ready) {
     return
@@ -295,6 +350,7 @@ const saveProxy = async () => {
   success.value = ''
 
   try {
+    const proxy = { ...currentProxy.value, binding: targetMode.value === 'container' ? selectedTarget.value : null }
     if (editingIndex.value !== null && editingIndex.value !== undefined) {
       // 更新代理
       const indexValue = Number(editingIndex.value)
@@ -305,14 +361,15 @@ const saveProxy = async () => {
       }
       await api.put('/proxies', {
         index: indexValue,
-        proxy: currentProxy.value,
+        originalName: originalName.value,
+        proxy,
       })
       success.value = '代理更新成功，已热重载'
       await loadProxies()
       closeDialog()
     } else {
       // 添加代理
-      await api.post('/proxies', { proxy: currentProxy.value })
+      await api.post('/proxies', { proxy })
       success.value = '代理添加成功，已热重载'
       await loadProxies()
       closeDialog()
@@ -327,7 +384,10 @@ const saveProxy = async () => {
 const editProxy = (index) => {
   editingIndex.value = index
   currentProxy.value = { ...proxies.value[index] }
+  originalName.value = currentProxy.value.name
+  targetMode.value = currentProxy.value.binding ? 'container' : 'manual'
   showAddDialog.value = true
+  loadTargets()
 }
 
 const deleteProxy = async (index) => {
@@ -336,7 +396,7 @@ const deleteProxy = async (index) => {
   }
 
   try {
-    await api.delete('/proxies', { data: { index } })
+    await api.delete('/proxies', { data: { index, name: proxies.value[index].name } })
     success.value = '代理删除成功，已热重载'
     await loadProxies()
   } catch (err) {
@@ -347,6 +407,9 @@ const deleteProxy = async (index) => {
 const closeDialog = () => {
   showAddDialog.value = false
   editingIndex.value = null
+  originalName.value = ''
+  targetMode.value = 'manual'
+  selectedTarget.value = null
   submitting.value = false
   error.value = ''
   currentProxy.value = {

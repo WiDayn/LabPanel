@@ -19,9 +19,18 @@ func GetProxyList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.ProxyListResponse{
-		Config:  *frpConfig,
+		Config:  models.FrpConfig{ServerAddr: frpConfig.ServerAddr, ServerPort: frpConfig.ServerPort},
 		Proxies: frpConfig.Proxies,
 	})
+}
+
+func GetFRPTargets(c *gin.Context) {
+	targets, err := service.ListFRPTargets()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"targets": targets})
 }
 
 func AddProxy(c *gin.Context) {
@@ -52,7 +61,7 @@ func UpdateProxy(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "索引字段不能为空"})
 		return
 	}
-	if err := frpService.UpdateProxy(*req.Index, req.Proxy); err != nil {
+	if err := frpService.UpdateProxy(*req.Index, req.Name, req.Proxy); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -77,11 +86,10 @@ func DeleteProxy(c *gin.Context) {
 	}
 
 	frpService := service.NewFrpConfigService()
-	if err := frpService.DeleteProxy(req.Index); err != nil {
+	if err := frpService.DeleteProxy(req.Index, req.Name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "代理删除成功"})
 }
-

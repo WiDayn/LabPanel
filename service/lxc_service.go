@@ -196,6 +196,9 @@ func (s *LxcService) DeleteContainer(name string) error {
 		return err
 	}
 	defer release()
+	if err := (&FrpConfigService{cfg: s.cfg}).RequireUnboundContainer(name); err != nil {
+		return err
+	}
 	cmd := exec.Command("lxc", "delete", name, "--force")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

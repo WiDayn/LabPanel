@@ -41,18 +41,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
 	}
-	// Reserve the panel port before restoring forwards so a saved rule cannot
-	// claim the management endpoint and prevent access to the panel.
+	if err := service.CheckFRPUpgrade(cfg); err != nil {
+		log.Fatal(err)
+	}
+	if len(os.Args) == 2 && os.Args[1] == "check-frp-upgrade" {
+		return
+	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(cfg.ListenAddress, cfg.Port))
 	if err != nil {
 		log.Fatalf("监听面板端口失败: %v", err)
 	}
 	defer listener.Close()
-	if err := service.InitPortForwardService(cfg.PortForwardsPath); err != nil {
-		log.Printf("初始化端口转发失败: %v", err)
-	} else {
-		defer service.GetPortForwardService().Close()
-	}
+	service.StartFRPReconciliation(cfg)
 	if err := service.InitMetricsStore(cfg.MetricsDBPath, cfg.MetricsRetentionDays); err != nil {
 		log.Fatalf("初始化监控数据存储失败: %v", err)
 	}
@@ -118,15 +118,10 @@ func main() {
 
 			// 代理管理
 			auth.GET("/proxies", handlers.GetProxyList)
+			auth.GET("/proxies/container-targets", handlers.GetFRPTargets)
 			auth.POST("/proxies", handlers.AddProxy)
 			auth.PUT("/proxies", handlers.UpdateProxy)
 			auth.DELETE("/proxies", handlers.DeleteProxy)
-
-			// 宿主机端口转发（独立于 FRP）
-			auth.GET("/port-forwards", handlers.GetPortForwards)
-			auth.POST("/port-forwards", handlers.CreatePortForward)
-			auth.PUT("/port-forwards/:id", handlers.UpdatePortForward)
-			auth.DELETE("/port-forwards/:id", handlers.DeletePortForward)
 
 			// 基础配置更新
 			auth.PUT("/config/base", handlers.UpdateBaseConfig)

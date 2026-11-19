@@ -1,12 +1,22 @@
 package models
 
 type Proxy struct {
-	Name       string `json:"name" toml:"name"`
-	Type       string `json:"type" toml:"type"`
-	LocalIP    string `json:"localIP" toml:"localIP"`
-	LocalPort  int    `json:"localPort" toml:"localPort"`
-	RemotePort int    `json:"remotePort" toml:"remotePort"`
-	Comment    string `json:"comment" toml:"-"` // comment不写入toml，存储在单独文件
+	Name       string        `json:"name" toml:"name"`
+	Type       string        `json:"type" toml:"type"`
+	LocalIP    string        `json:"localIP" toml:"localIP"`
+	LocalPort  int           `json:"localPort" toml:"localPort"`
+	RemotePort int           `json:"remotePort" toml:"remotePort"`
+	Comment    string        `json:"comment" toml:"-"` // comment不写入toml，存储在单独文件
+	Binding    *ProxyBinding `json:"binding,omitempty" toml:"-"`
+	Candidate  string        `json:"candidate,omitempty" toml:"-"`
+	Paused     bool          `json:"paused,omitempty" toml:"-"`
+}
+
+type ProxyBinding struct {
+	InstanceID string `json:"instanceId"`
+	Device     string `json:"device"`
+	Container  string `json:"container"`
+	Address    string `json:"address"`
 }
 
 // ProxyComments 存储代理备注的映射
@@ -49,10 +59,12 @@ type AddProxyRequest struct {
 }
 
 type UpdateProxyRequest struct {
-	Index *int  `json:"index" binding:"required"`
-	Proxy Proxy `json:"proxy" binding:"required"`
+	Index *int   `json:"index" binding:"required"`
+	Name  string `json:"originalName"`
+	Proxy Proxy  `json:"proxy" binding:"required"`
 }
 
 type DeleteProxyRequest struct {
-	Index int `json:"index" binding:"required"`
+	Index int    `json:"index"`
+	Name  string `json:"name"`
 }

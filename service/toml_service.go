@@ -24,9 +24,17 @@ func (s *TomlService) ReadConfig() (string, error) {
 }
 
 func (s *TomlService) WriteConfig(content string) error {
-	if err := os.WriteFile(s.cfg.TomlPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("写入配置文件失败: %v", err)
+	frpConfigMu.Lock()
+	defer frpConfigMu.Unlock()
+	frp := &FrpConfigService{cfg: s.cfg}
+	doc, err := frp.readDocument()
+	if err != nil {
+		return err
 	}
-	return nil
+	for _, state := range doc.state {
+		if state.Binding != nil {
+			return fmt.Errorf("已存在容器绑定，请通过 FRP 管理编辑规则")
+		}
+	}
+	return frp.applyRaw(doc.original, []byte(content))
 }
-
