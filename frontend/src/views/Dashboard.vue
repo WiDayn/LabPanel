@@ -364,7 +364,15 @@ const confirmBindings = async () => {
     for (const row of rows) {
       row.error = ''
       try {
-        await api.post('/proxies/confirm-binding', { name: row.name, binding: row.target }, { timeout: 60000 })
+        const { data } = await api.post('/proxies/confirm-binding', { name: row.name, binding: row.target }, { timeout: 60000 })
+        if (data.binding?.instanceId && data.binding.instanceId !== row.target.instanceId) {
+          const previous = row.target
+          for (const candidate of reviewRows.value) {
+            if (candidate.target?.instanceId === previous.instanceId && candidate.target.container === previous.container) {
+              candidate.target = { ...candidate.target, instanceId: data.binding.instanceId }
+            }
+          }
+        }
         row.done = true
         succeeded++
         selectedRules.value = selectedRules.value.filter(name => name !== row.name)

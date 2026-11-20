@@ -185,12 +185,12 @@ func (s *FrpConfigService) DeleteProxy(index int, name string) error {
 	return s.editProxy(index, name, nil)
 }
 
-func (s *FrpConfigService) ConfirmBinding(name string, binding models.ProxyBinding) error {
+func (s *FrpConfigService) ConfirmBinding(name string, binding models.ProxyBinding) (models.ProxyBinding, error) {
 	frpConfigMu.Lock()
 	defer frpConfigMu.Unlock()
 	doc, err := s.readDocument()
 	if err != nil {
-		return err
+		return binding, err
 	}
 	for _, row := range doc.rules {
 		if row["name"] != name {
@@ -198,25 +198,31 @@ func (s *FrpConfigService) ConfirmBinding(name string, binding models.ProxyBindi
 		}
 		state := doc.state[name]
 		if state.Binding != nil && *state.Binding == binding && row["localIP"] == binding.Address {
-			return nil
+			return binding, nil
 		}
 		if state.Binding != nil || row["localIP"] != binding.Address || (row["type"] != "tcp" && row["type"] != "udp") {
-			return fmt.Errorf("规则目标或绑定状态已变化，请刷新后核对")
+			return binding, fmt.Errorf("规则目标或绑定状态已变化，请刷新后核对")
 		}
 		release, err := lockLxcOperation(binding.Container)
 		if err != nil {
-			return err
+			return binding, err
 		}
 		defer release()
-		verified, err := reserveFRPAddress(binding)
+		verified, rotated, err := confirmFRPTarget(doc, binding)
 		if err != nil {
-			return err
+			return binding, err
 		}
 		state.Binding = &verified
 		doc.state[name] = state
-		return s.apply(doc)
+		if err := s.apply(doc); err != nil {
+			if rotated {
+				err = errors.Join(err, setLxcUUID(binding.Container, binding.InstanceID, false))
+			}
+			return binding, err
+		}
+		return verified, nil
 	}
-	return fmt.Errorf("规则已变化，请刷新后重试")
+	return binding, fmt.Errorf("规则已变化，请刷新后重试")
 }
 
 func (s *FrpConfigService) editProxy(index int, name string, proxy *models.Proxy) error {

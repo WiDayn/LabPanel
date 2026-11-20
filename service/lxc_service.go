@@ -857,6 +857,10 @@ func (s *LxcService) importBackupWithTargetName(backupPath, targetName, pool str
 	if err != nil {
 		return fmt.Errorf("生成新容器 MAC 地址失败: %v", err)
 	}
+	uuid, err := newLxcUUID()
+	if err != nil {
+		return fmt.Errorf("生成恢复容器 UUID 失败: %w", err)
+	}
 
 	var lastErr error
 	var lastOutput string
@@ -864,6 +868,9 @@ func (s *LxcService) importBackupWithTargetName(backupPath, targetName, pool str
 		args := appendPoolFlag([]string{"import", backupPath, targetName, "--device", "eth0,hwaddr=" + macAddress}, pool)
 		output, err := exec.Command("lxc", args...).CombinedOutput()
 		if err == nil {
+			if err := setLxcUUID(targetName, uuid, true); err != nil {
+				return fmt.Errorf("容器已导入，但身份初始化失败，恢复流程已停止: %w", err)
+			}
 			return nil
 		}
 

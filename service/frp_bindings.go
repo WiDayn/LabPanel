@@ -94,7 +94,7 @@ func validateFRPTarget(instances []frpInstance, binding models.ProxyBinding) (fr
 	}
 	var instance frpInstance
 	for _, candidate := range instances {
-		if candidate.Config["volatile.uuid"] != binding.InstanceID {
+		if candidate.Config[lxcUUIDKey] != binding.InstanceID {
 			continue
 		}
 		if instance.Name != "" {
@@ -102,6 +102,10 @@ func validateFRPTarget(instances []frpInstance, binding models.ProxyBinding) (fr
 		}
 		instance = candidate
 	}
+	return validateFRPAddressOwner(instances, instance, binding)
+}
+
+func validateFRPAddressOwner(instances []frpInstance, instance frpInstance, binding models.ProxyBinding) (frpInstance, error) {
 	ownerCount := 0
 	expectedOwner := false
 	for _, candidate := range instances {
@@ -187,6 +191,10 @@ func reserveFRPAddress(binding models.ProxyBinding) (models.ProxyBinding, error)
 	if instance.Name != binding.Container {
 		return binding, fmt.Errorf("容器名称已变化，请重新选择")
 	}
+	return reserveVerifiedFRPAddress(instance, binding)
+}
+
+func reserveVerifiedFRPAddress(instance frpInstance, binding models.ProxyBinding) (models.ProxyBinding, error) {
 	if err := verifyFRPLease(instance, binding); err != nil {
 		return binding, err
 	}
@@ -202,8 +210,65 @@ func reserveFRPAddress(binding models.ProxyBinding) (models.ProxyBinding, error)
 	if _, local := instance.Devices[binding.Device]; local {
 		args[2] = "set"
 	}
-	_, err = lxcStorageCommand(10*time.Second, args...)
+	_, err := lxcStorageCommand(10*time.Second, args...)
 	return binding, err
+}
+
+func confirmFRPTarget(doc *frpDocument, binding models.ProxyBinding) (models.ProxyBinding, bool, error) {
+	if binding.InstanceID == "" || !storageNamePattern.MatchString(binding.Container) || !storageNamePattern.MatchString(binding.Device) {
+		return binding, false, fmt.Errorf("请选择容器和网卡")
+	}
+	instances, err := listFRPInstances()
+	if err != nil {
+		return binding, false, err
+	}
+	owners := make(map[string]frpInstance)
+	for _, instance := range instances {
+		if instance.Config[lxcUUIDKey] == binding.InstanceID {
+			owners[instance.Name] = instance
+		}
+	}
+	instance, exists := owners[binding.Container]
+	if !exists {
+		return binding, false, fmt.Errorf("容器身份已变化，请刷新后重新确认")
+	}
+	if _, err := validateFRPAddressOwner(instances, instance, binding); err != nil {
+		return binding, false, err
+	}
+	if len(owners) == 1 {
+		verified, err := reserveVerifiedFRPAddress(instance, binding)
+		return verified, false, err
+	}
+
+	for name, state := range doc.state {
+		if state.Binding == nil || state.Binding.InstanceID != binding.InstanceID {
+			continue
+		}
+		if _, found := owners[state.Binding.Container]; !found {
+			return binding, false, fmt.Errorf("规则 %s 的原容器无法确认，请先核对该规则", name)
+		}
+	}
+	newID, err := newLxcUUID()
+	if err != nil {
+		return binding, false, err
+	}
+	verified, err := reserveVerifiedFRPAddress(instance, binding)
+	if err != nil {
+		return binding, false, err
+	}
+	if err := setLxcUUID(instance.Name, newID, false); err != nil {
+		return binding, false, err
+	}
+	for name, state := range doc.state {
+		if state.Binding != nil && state.Binding.InstanceID == binding.InstanceID && state.Binding.Container == instance.Name {
+			updated := *state.Binding
+			updated.InstanceID = newID
+			state.Binding = &updated
+			doc.state[name] = state
+		}
+	}
+	verified.InstanceID = newID
+	return verified, true, nil
 }
 
 func (s *FrpConfigService) reconcileBindings() error {

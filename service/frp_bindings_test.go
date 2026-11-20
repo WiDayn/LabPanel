@@ -65,13 +65,13 @@ esac
 	proxy.Binding = &models.ProxyBinding{InstanceID: "original-id", Container: "original", Device: "eth0", Address: "10.42.0.10"}
 	stale := *proxy.Binding
 	stale.Address = "10.42.0.99"
-	if err := service.ConfirmBinding("old", stale); err == nil {
+	if _, err := service.ConfirmBinding("old", stale); err == nil {
 		t.Fatal("confirmed a rule whose address changed")
 	}
-	if err := service.ConfirmBinding("old", *proxy.Binding); err != nil {
+	if _, err := service.ConfirmBinding("old", *proxy.Binding); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ConfirmBinding("old", *proxy.Binding); err != nil {
+	if _, err := service.ConfirmBinding("old", *proxy.Binding); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(configPath)

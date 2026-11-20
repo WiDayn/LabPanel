@@ -42,11 +42,12 @@ func ConfirmProxyBinding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择规则和容器网卡"})
 		return
 	}
-	if err := service.NewFrpConfigService().ConfirmBinding(req.Name, req.Binding); err != nil {
+	binding, err := service.NewFrpConfigService().ConfirmBinding(req.Name, req.Binding)
+	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, gin.H{"binding": binding})
 }
 
 func AddProxy(c *gin.Context) {
