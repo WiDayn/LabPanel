@@ -2,6 +2,7 @@
 const props = defineProps({
   label: { type: String, required: true },
   tone: { type: String, required: true },
+  statusDot: String,
   selectable: Boolean,
   selected: Boolean,
 })
@@ -23,6 +24,7 @@ const emit = defineEmits(['toggle'])
     @click="props.selectable && emit('toggle')"
   >
     <span v-if="props.selected" aria-hidden="true">✓</span>
+    <span v-else-if="props.statusDot" class="h-1.5 w-1.5 shrink-0 rounded-full" :class="props.statusDot" aria-hidden="true"></span>
     <span class="min-w-0 break-all">{{ props.label }}</span>
   </component>
 </template>

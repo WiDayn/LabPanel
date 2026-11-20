@@ -24,6 +24,7 @@
                   :key="tag.id"
                   :label="tag.label"
                   :tone="tag.tone"
+                  :status-dot="tag.statusDot"
                   :selected="selectedTags.has(tag.id)"
                   selectable
                   @toggle="toggleTag(tag.id)"
@@ -32,30 +33,31 @@
             </div>
             <p v-if="groupError" class="border-t px-4 py-2 text-xs text-amber-800" role="status">{{ groupError }} <button type="button" class="font-medium underline" @click="loadGroups">重试</button></p>
             <div class="max-h-[44dvh] overflow-y-auto border-t border-gray-200 lg:max-h-[72dvh]">
-              <section v-for="bucket in runtimeBuckets" :key="bucket.type" :aria-label="runtimeLabel(bucket.type)">
-                <h3 class="sticky top-0 z-10 flex justify-between border-y border-gray-100 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
-                  {{ runtimeLabel(bucket.type) }} <span class="tabular-nums">{{ bucket.rows.length }}</span>
-                </h3>
-                <ul class="divide-y divide-gray-100">
-                  <li v-for="container in bucket.rows" :key="containerKey(container)">
-                    <button type="button" :aria-pressed="currentKey === containerKey(container)"
-                      class="block w-full px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500"
-                      :class="currentKey === containerKey(container) ? 'bg-blue-50' : 'hover:bg-gray-50'"
-                      @click="selectContainer(containerKey(container))"
-                    >
-                      <div class="min-w-0 break-all text-sm font-semibold" :class="currentKey === containerKey(container) ? 'text-blue-800' : 'text-gray-900'">{{ container.name }}</div>
-                      <div class="mt-1.5 flex flex-wrap gap-1.5">
-                        <ContainerTag v-for="tag in tagsByContainer.get(containerKey(container))" :key="tag.id" :label="tag.label" :tone="tag.tone" />
-                      </div>
-                      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-gray-600">
-                        <span>CPU {{ formatPercent(container.cpuPercent) }}</span>
-                        <span>内存 {{ formatBytes(container.memoryBytes) }}</span>
-                      </div>
-                    </button>
-                  </li>
-                </ul>
-              </section>
-              <div v-if="!visibleContainers.length" class="px-4 py-5 text-sm text-gray-600" role="status">
+              <ul v-if="visibleContainers.length" class="divide-y divide-gray-100" aria-label="容器列表">
+                <li v-for="container in visibleContainers" :key="containerKey(container)">
+                  <button type="button" :aria-pressed="currentKey === containerKey(container)"
+                    class="block w-full px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500"
+                    :class="currentKey === containerKey(container) ? 'bg-blue-50' : 'hover:bg-gray-50'"
+                    @click="selectContainer(containerKey(container))"
+                  >
+                    <div class="min-w-0 break-all text-sm font-semibold" :class="currentKey === containerKey(container) ? 'text-blue-800' : 'text-gray-900'">{{ container.name }}</div>
+                    <div class="mt-1.5 flex flex-wrap gap-1.5">
+                      <ContainerTag
+                        v-for="tag in tagsByContainer.get(containerKey(container))"
+                        :key="tag.id"
+                        :label="tag.label"
+                        :tone="tag.tone"
+                        :status-dot="tag.statusDot"
+                      />
+                    </div>
+                    <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-gray-600">
+                      <span>CPU {{ formatPercent(container.cpuPercent) }}</span>
+                      <span>内存 {{ formatBytes(container.memoryBytes) }}</span>
+                    </div>
+                  </button>
+                </li>
+              </ul>
+              <div v-else class="px-4 py-5 text-sm text-gray-600" role="status">
                 {{ loading && !containers.length ? '正在加载容器…' : selectedTags.size ? '没有同时匹配这些标签的容器' : '暂无容器监控数据' }}
               </div>
             </div>
@@ -296,7 +298,7 @@ const error = ref('')
 const rangeKey = ref('1h')
 const selectedName = ref('')
 const metrics = ref({ containers: [], selected: null, intervalSeconds: 60 })
-const selectedTags = ref(new Set())
+const selectedTags = ref(new Set(['runtime:lxc']))
 const groups = ref([])
 const groupAssignments = ref({})
 const groupDataReady = ref(false)
@@ -338,14 +340,18 @@ const groupColors = {
 }
 
 const runtimeTags = {
-  lxc: { id: 'runtime:lxc', label: 'LXC', tone: groupColors.indigo },
-  docker: { id: 'runtime:docker', label: 'Docker', tone: groupColors.cyan },
+  lxc: { id: 'runtime:lxc', label: 'LXC', tone: 'border-blue-700 bg-blue-700 text-white' },
+  docker: { id: 'runtime:docker', label: 'Docker', tone: 'border-violet-700 bg-violet-700 text-white' },
 }
-const ungroupedTag = { id: 'ungrouped', label: '未分组', tone: groupColors.slate }
+const stateStyles = {
+  Running: { tone: 'border-green-500 bg-white text-green-800', statusDot: 'bg-green-600' },
+  Stopped: { tone: 'border-amber-500 bg-white text-amber-900', statusDot: 'bg-amber-600' },
+}
+const otherStateStyle = { tone: 'border-gray-400 bg-white text-gray-700', statusDot: 'bg-gray-500' }
 const stateTag = state => ({
   id: `state:${state}`,
   label: state,
-  tone: state === 'Running' ? groupColors.emerald : groupColors.slate,
+  ...(stateStyles[state] || otherStateStyle),
 })
 const groupTag = group => ({
   id: `group:${group.id}`,
@@ -354,27 +360,23 @@ const groupTag = group => ({
 })
 
 const tagsByContainer = computed(() => new Map(containers.value.map(container => {
-  const assigned = groupsFor(container)
-  const tags = [runtimeTags[containerRuntime(container)], stateTag(containerState(container)), ...assigned.map(groupTag)]
-  if (groupDataReady.value && !assigned.length) tags.push(ungroupedTag)
-  return [containerKey(container), tags]
+  return [containerKey(container), [
+    runtimeTags[containerRuntime(container)],
+    stateTag(containerState(container)),
+    ...groupsFor(container).map(groupTag),
+  ]]
 })))
 
 const filterTags = computed(() => {
   const activeStates = [...selectedTags.value].filter(id => id.startsWith('state:')).map(id => id.slice(6))
   const states = new Set(['Running', 'Stopped', ...containers.value.map(containerState), ...activeStates])
-  const tags = [...Object.values(runtimeTags), ...[...states].map(stateTag), ...groups.value.map(groupTag)]
-  if (groupDataReady.value) tags.push(ungroupedTag)
-  return tags
+  return [...Object.values(runtimeTags), ...[...states].map(stateTag), ...groups.value.map(groupTag)]
 })
 
 const visibleContainers = computed(() => containers.value.filter(container => {
   const tags = tagsByContainer.value.get(containerKey(container))
   return [...selectedTags.value].every(id => tags.some(tag => tag.id === id))
 }))
-const runtimeBuckets = computed(() => ['lxc', 'docker'].map(type => ({
-  type, rows: visibleContainers.value.filter(container => containerRuntime(container) === type),
-})).filter(bucket => bucket.rows.length))
 const currentKey = computed(() => selectedName.value)
 const currentSummary = computed(() => visibleContainers.value.find(container => containerKey(container) === currentKey.value))
 const seriesPoints = computed(() => {
@@ -439,7 +441,7 @@ const selectContainer = async (name) => {
 
 watch(visibleContainers, (rows) => {
   if (rows.some(container => containerKey(container) === currentKey.value)) return
-  const first = runtimeBuckets.value[0]?.rows[0]
+  const first = rows[0]
   selectContainer(first ? containerKey(first) : '')
 })
 
