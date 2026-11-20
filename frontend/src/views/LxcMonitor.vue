@@ -15,34 +15,20 @@
                 <h2 class="text-base font-semibold">容器列表</h2>
                 <p class="text-xs tabular-nums text-gray-600">{{ visibleContainers.length }} / {{ containers.length }} 个</p>
               </div>
-              <details ref="filterMenu" class="relative" @keydown.esc.stop="closeFilters">
-                <summary class="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
-                  筛选<span v-if="activeFilterCount" class="text-blue-700">{{ activeFilterCount }}</span>
-                </summary>
-                <div class="absolute right-0 z-20 mt-2 w-60 space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-md">
-                  <label class="block text-xs font-medium text-gray-700">类型
-                    <select v-model="runtimeFilter" class="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
-                      <option value="">全部类型</option>
-                      <option value="lxc">LXC</option>
-                      <option value="docker">Docker</option>
-                    </select>
-                  </label>
-                  <label class="block text-xs font-medium text-gray-700">状态
-                    <select v-model="stateFilter" class="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
-                      <option value="">全部状态</option>
-                      <option v-for="state in availableStates" :key="state" :value="state">{{ state }}</option>
-                    </select>
-                  </label>
-                  <label class="block text-xs font-medium text-gray-700">分组
-                    <select v-model="groupFilter" :disabled="!groupDataReady" class="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60">
-                      <option value="">全部分组</option>
-                      <option value="ungrouped">未分组</option>
-                      <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
-                    </select>
-                  </label>
-                  <Button size="sm" variant="outline" :disabled="!activeFilterCount" @click="resetFilters">清除筛选</Button>
-                </div>
-              </details>
+              <button v-if="selectedTags.size" type="button" class="min-h-7 rounded-sm text-xs font-medium text-blue-700 hover:underline focus-visible:outline focus-visible:outline-blue-500" @click="selectedTags.clear()">清除筛选</button>
+            </div>
+            <div class="border-t border-gray-100 px-4 py-3">
+              <div class="flex max-h-40 flex-wrap items-start gap-1.5 overflow-y-auto p-1 -m-1" role="group" aria-label="容器标签筛选">
+                <ContainerTag
+                  v-for="tag in filterTags"
+                  :key="tag.id"
+                  :label="tag.label"
+                  :tone="tag.tone"
+                  :selected="selectedTags.has(tag.id)"
+                  selectable
+                  @toggle="toggleTag(tag.id)"
+                />
+              </div>
             </div>
             <p v-if="groupError" class="border-t px-4 py-2 text-xs text-amber-800" role="status">{{ groupError }} <button type="button" class="font-medium underline" @click="loadGroups">重试</button></p>
             <div class="max-h-[44dvh] overflow-y-auto border-t border-gray-200 lg:max-h-[72dvh]">
@@ -57,25 +43,20 @@
                       :class="currentKey === containerKey(container) ? 'bg-blue-50' : 'hover:bg-gray-50'"
                       @click="selectContainer(containerKey(container))"
                     >
-                      <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                        <span class="min-w-0 break-all text-sm font-semibold" :class="currentKey === containerKey(container) ? 'text-blue-800' : 'text-gray-900'">{{ container.name }}</span>
-                        <span class="inline-flex items-center gap-1.5 text-xs text-gray-600">
-                          <span class="h-1.5 w-1.5 rounded-full" :class="containerState(container) === 'Running' ? 'bg-green-600' : 'bg-gray-400'" aria-hidden="true"></span>
-                          {{ containerState(container) }}
-                        </span>
+                      <div class="min-w-0 break-all text-sm font-semibold" :class="currentKey === containerKey(container) ? 'text-blue-800' : 'text-gray-900'">{{ container.name }}</div>
+                      <div class="mt-1.5 flex flex-wrap gap-1.5">
+                        <ContainerTag v-for="tag in tagsByContainer.get(containerKey(container))" :key="tag.id" :label="tag.label" :tone="tag.tone" />
                       </div>
                       <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-gray-600">
                         <span>CPU {{ formatPercent(container.cpuPercent) }}</span>
                         <span>内存 {{ formatBytes(container.memoryBytes) }}</span>
-                        <span v-for="group in groupsFor(container).slice(0, 2)" :key="group.id" class="max-w-28 truncate rounded-full px-2 py-0.5 ring-1 ring-inset" :class="groupColors[group.color] || groupColors.slate" :title="group.name">{{ group.name }}</span>
-                        <span v-if="groupsFor(container).length > 2" :title="groupsFor(container).map(group => group.name).join('、')">+{{ groupsFor(container).length - 2 }}</span>
                       </div>
                     </button>
                   </li>
                 </ul>
               </section>
               <div v-if="!visibleContainers.length" class="px-4 py-5 text-sm text-gray-600" role="status">
-                {{ loading ? '正在加载容器…' : activeFilterCount ? '没有符合筛选条件的容器' : '暂无容器监控数据' }}
+                {{ loading && !containers.length ? '正在加载容器…' : selectedTags.size ? '没有同时匹配这些标签的容器' : '暂无容器监控数据' }}
               </div>
             </div>
           </section>
@@ -208,6 +189,7 @@ import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import ContainerTag from '@/components/ui/ContainerTag.vue'
 
 const MetricChart = defineComponent({
   name: 'MetricChart',
@@ -314,14 +296,11 @@ const error = ref('')
 const rangeKey = ref('1h')
 const selectedName = ref('')
 const metrics = ref({ containers: [], selected: null, intervalSeconds: 60 })
-const runtimeFilter = ref('')
-const stateFilter = ref('')
-const groupFilter = ref('')
+const selectedTags = ref(new Set())
 const groups = ref([])
 const groupAssignments = ref({})
 const groupDataReady = ref(false)
 const groupError = ref('')
-const filterMenu = ref(null)
 let refreshTimer = null
 let metricsRequest
 
@@ -341,32 +320,57 @@ const containerState = (container) => {
   if (/^(stopped|exited|dead|created)$/i.test(state)) return 'Stopped'
   return state[0].toUpperCase() + state.slice(1).toLowerCase()
 }
-const availableStates = computed(() => [...new Set(['Running', 'Stopped', ...containers.value.map(containerState)])])
 const groupsByID = computed(() => new Map(groups.value.map(group => [group.id, group])))
 const groupsFor = container => containerRuntime(container) === 'lxc'
   ? (groupAssignments.value[container.name] || []).map(id => groupsByID.value.get(id)).filter(Boolean)
   : []
 const groupColors = {
-  blue: 'bg-blue-50 text-blue-700 ring-blue-200',
-  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  amber: 'bg-amber-50 text-amber-800 ring-amber-200',
-  violet: 'bg-violet-50 text-violet-700 ring-violet-200',
-  rose: 'bg-rose-50 text-rose-700 ring-rose-200',
-  cyan: 'bg-cyan-50 text-cyan-800 ring-cyan-200',
-  lime: 'bg-lime-50 text-lime-800 ring-lime-200',
-  orange: 'bg-orange-50 text-orange-800 ring-orange-200',
-  indigo: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
-  slate: 'bg-slate-100 text-slate-700 ring-slate-200',
+  blue: 'bg-blue-50 text-blue-700 border-blue-200',
+  emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  amber: 'bg-amber-50 text-amber-800 border-amber-200',
+  violet: 'bg-violet-50 text-violet-700 border-violet-200',
+  rose: 'bg-rose-50 text-rose-700 border-rose-200',
+  cyan: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+  lime: 'bg-lime-50 text-lime-800 border-lime-200',
+  orange: 'bg-orange-50 text-orange-800 border-orange-200',
+  indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  slate: 'bg-slate-100 text-slate-700 border-slate-200',
 }
 
-const activeFilterCount = computed(() => [runtimeFilter.value, stateFilter.value, groupFilter.value].filter(Boolean).length)
-const visibleContainers = computed(() => containers.value.filter(container => {
-  if (runtimeFilter.value && containerRuntime(container) !== runtimeFilter.value) return false
-  if (stateFilter.value && containerState(container) !== stateFilter.value) return false
-  if (!groupFilter.value) return true
+const runtimeTags = {
+  lxc: { id: 'runtime:lxc', label: 'LXC', tone: groupColors.indigo },
+  docker: { id: 'runtime:docker', label: 'Docker', tone: groupColors.cyan },
+}
+const ungroupedTag = { id: 'ungrouped', label: '未分组', tone: groupColors.slate }
+const stateTag = state => ({
+  id: `state:${state}`,
+  label: state,
+  tone: state === 'Running' ? groupColors.emerald : groupColors.slate,
+})
+const groupTag = group => ({
+  id: `group:${group.id}`,
+  label: group.name,
+  tone: groupColors[group.color] || groupColors.slate,
+})
+
+const tagsByContainer = computed(() => new Map(containers.value.map(container => {
   const assigned = groupsFor(container)
-  if (groupFilter.value === 'ungrouped') return assigned.length === 0
-  return assigned.some(group => group.id === groupFilter.value)
+  const tags = [runtimeTags[containerRuntime(container)], stateTag(containerState(container)), ...assigned.map(groupTag)]
+  if (groupDataReady.value && !assigned.length) tags.push(ungroupedTag)
+  return [containerKey(container), tags]
+})))
+
+const filterTags = computed(() => {
+  const activeStates = [...selectedTags.value].filter(id => id.startsWith('state:')).map(id => id.slice(6))
+  const states = new Set(['Running', 'Stopped', ...containers.value.map(containerState), ...activeStates])
+  const tags = [...Object.values(runtimeTags), ...[...states].map(stateTag), ...groups.value.map(groupTag)]
+  if (groupDataReady.value) tags.push(ungroupedTag)
+  return tags
+})
+
+const visibleContainers = computed(() => containers.value.filter(container => {
+  const tags = tagsByContainer.value.get(containerKey(container))
+  return [...selectedTags.value].every(id => tags.some(tag => tag.id === id))
 }))
 const runtimeBuckets = computed(() => ['lxc', 'docker'].map(type => ({
   type, rows: visibleContainers.value.filter(container => containerRuntime(container) === type),
@@ -378,21 +382,9 @@ const seriesPoints = computed(() => {
   return currentSummary.value && (selected?.key || selected?.name) === currentKey.value ? selected.points || [] : []
 })
 
-const resetFilters = () => {
-  runtimeFilter.value = ''
-  stateFilter.value = ''
-  groupFilter.value = ''
-}
-
-const closeFilters = () => {
-  if (!filterMenu.value?.open) return
-  filterMenu.value.open = false
-  filterMenu.value.querySelector('summary')?.focus()
-}
-
-const closeFiltersOutside = (event) => {
-  const menu = filterMenu.value
-  if (menu?.open && !menu.contains(event.target)) menu.open = false
+const toggleTag = (id) => {
+  if (selectedTags.value.has(id)) selectedTags.value.delete(id)
+  else selectedTags.value.add(id)
 }
 
 const loadGroups = async () => {
@@ -400,7 +392,9 @@ const loadGroups = async () => {
     const { data } = await api.get('/lxc/groups', { timeout: 10000 })
     groups.value = data.groups || []
     groupAssignments.value = data.containerGroups || {}
-    if (groupFilter.value && groupFilter.value !== 'ungrouped' && !groupsByID.value.has(groupFilter.value)) groupFilter.value = ''
+    for (const id of selectedTags.value) {
+      if (id.startsWith('group:') && !groupsByID.value.has(id.slice(6))) selectedTags.value.delete(id)
+    }
     groupDataReady.value = true
     groupError.value = ''
   } catch {
@@ -480,7 +474,6 @@ const runtimeLabel = (runtimeType) => {
 }
 
 onMounted(() => {
-  document.addEventListener('pointerdown', closeFiltersOutside)
   const refresh = () => {
     loadMetrics()
     loadGroups()
@@ -490,7 +483,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', closeFiltersOutside)
   metricsRequest?.abort()
   if (refreshTimer) {
     window.clearInterval(refreshTimer)

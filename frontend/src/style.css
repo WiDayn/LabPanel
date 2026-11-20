@@ -10,6 +10,10 @@
   @apply bg-gray-50 text-left text-xs text-gray-700;
 }
 
+.panel-table > :is(thead, tbody, tfoot) > tr > :is(th, td) {
+  padding-inline: 0.75rem;
+}
+
 .panel-table tbody tr {
   @apply hover:bg-gray-50;
 }
