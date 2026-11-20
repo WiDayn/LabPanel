@@ -63,7 +63,15 @@ esac
 	}
 	proxy := legacy.Proxies[0]
 	proxy.Binding = &models.ProxyBinding{InstanceID: "original-id", Container: "original", Device: "eth0", Address: "10.42.0.10"}
-	if err := service.UpdateProxy(0, "old", proxy); err != nil {
+	stale := *proxy.Binding
+	stale.Address = "10.42.0.99"
+	if err := service.ConfirmBinding("old", stale); err == nil {
+		t.Fatal("confirmed a rule whose address changed")
+	}
+	if err := service.ConfirmBinding("old", *proxy.Binding); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ConfirmBinding("old", *proxy.Binding); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(configPath)

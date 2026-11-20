@@ -11,10 +11,12 @@ type LxcStoragePool struct {
 }
 
 type LxcStorageMount struct {
-	Name   string `json:"name"`
-	Source string `json:"source"`
-	Path   string `json:"path"`
-	Pool   string `json:"pool,omitempty"`
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Path     string `json:"path"`
+	Pool     string `json:"pool,omitempty"`
+	Readonly bool   `json:"readonly"`
+	Editable bool   `json:"editable"`
 }
 
 type LxcStorageMove struct {

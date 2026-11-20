@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"LabPanel/models"
 	"LabPanel/service"
 	"net/http"
 
@@ -44,6 +45,32 @@ func GetLxcStorageMounts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"mounts": mounts})
+}
+
+func SaveLxcStorageMount(c *gin.Context) {
+	var mount models.LxcStorageMount
+	if c.ShouldBindJSON(&mount) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写挂载配置"})
+		return
+	}
+	create := c.Request.Method == http.MethodPost
+	deviceName := c.Param("device")
+	if create {
+		deviceName = mount.Name
+	}
+	if err := service.ChangeLxcMount(c.Param("name"), deviceName, &mount, create); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func DeleteLxcStorageMount(c *gin.Context) {
+	if err := service.ChangeLxcMount(c.Param("name"), c.Param("device"), nil, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func GetLxcStorageMoves(c *gin.Context) {

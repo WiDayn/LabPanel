@@ -572,9 +572,17 @@
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
       @click.self="closeConfigDialog"
     >
-      <Card class="w-full max-w-4xl p-6 m-4 max-h-[90vh] flex flex-col">
+      <Card class="w-full max-w-4xl p-6 m-4 max-h-[90dvh] overflow-y-auto">
         <h3 class="text-lg font-semibold mb-4">容器配置 - {{ configContainer.name }}</h3>
-        <div v-if="loadingConfig" class="flex-1 flex items-center justify-center py-8">
+        <div class="mb-4 flex gap-2 border-b pb-3">
+          <Button size="sm" :variant="configTab === 'mounts' ? 'default' : 'outline'" :aria-pressed="configTab === 'mounts'" :disabled="savingConfig || savingMount" @click="configTab = 'mounts'">目录挂载</Button>
+          <Button size="sm" :variant="configTab === 'yaml' ? 'default' : 'outline'" :aria-pressed="configTab === 'yaml'" :disabled="savingConfig || savingMount" @click="configTab = 'yaml'">YAML 配置</Button>
+        </div>
+        <LxcMountEditor v-show="configTab === 'mounts'" :key="configContainer.name" :name="configContainer.name" @busy="savingMount = $event" @changed="refreshConfigAfterMount" />
+        <div v-if="configTab === 'mounts'" class="mt-4 flex justify-end">
+          <Button variant="outline" :disabled="savingMount" @click="closeConfigDialog">关闭</Button>
+        </div>
+        <div v-else-if="loadingConfig" class="flex items-center justify-center py-8">
           <div class="text-center">
             <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
             <p class="text-gray-600">正在加载配置...</p>
@@ -585,7 +593,7 @@
             <label class="block text-sm font-medium mb-2">配置文件 (YAML)</label>
             <textarea
               v-model="configContent"
-              class="w-full h-full min-h-[400px] p-3 border border-gray-300 rounded-md font-mono text-sm"
+              class="w-full min-h-56 p-3 border border-gray-300 rounded-md font-mono text-sm"
               style="font-family: 'Courier New', monospace;"
               spellcheck="false"
             ></textarea>
@@ -707,6 +715,7 @@ import Card from '@/components/ui/Card.vue'
 import Input from '@/components/ui/Input.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import LxcStorage from '@/components/LxcStorage.vue'
+import LxcMountEditor from '@/components/LxcMountEditor.vue'
 
 const containers = ref([])
 const storagePools = ref([])
@@ -737,6 +746,10 @@ const savingGroups = ref(false)
 const groupTargetContainer = ref(null)
 const groupForm = ref({ groupIds: [], groupInput: '' })
 const showConfigDialog = ref(false)
+const configTab = ref('mounts')
+const savingMount = ref(false)
+let loadedConfig = ''
+let configRequest = 0
 const configContainer = ref({ name: '' })
 const configContent = ref('')
 const loadingConfig = ref(false)
@@ -1490,16 +1503,29 @@ const showConfig = async (name) => {
   configContent.value = ''
   configError.value = ''
   showConfigDialog.value = true
+  configTab.value = 'mounts'
+  loadedConfig = ''
+  await loadConfigContent(name)
+}
+
+const loadConfigContent = async (name) => {
+  const request = ++configRequest
   loadingConfig.value = true
 
   try {
     const response = await api.get(`/lxc/config/${encodeURIComponent(name)}`)
-    configContent.value = response.data.config || ''
+    if (request !== configRequest) return
+    loadedConfig = response.data.config || ''
+    configContent.value = loadedConfig
   } catch (err) {
-    configError.value = err.response?.data?.error || '加载配置失败'
+    if (request === configRequest) configError.value = err.response?.data?.error || '加载配置失败'
   } finally {
-    loadingConfig.value = false
+    if (request === configRequest) loadingConfig.value = false
   }
+}
+
+const refreshConfigAfterMount = () => {
+  if (configContent.value === loadedConfig) loadConfigContent(configContainer.value.name)
 }
 
 const saveConfig = async () => {
@@ -1530,6 +1556,8 @@ const saveConfig = async () => {
 }
 
 const closeConfigDialog = () => {
+  if (savingMount.value) return
+  configRequest++
   showConfigDialog.value = false
   configContainer.value = { name: '' }
   configContent.value = ''

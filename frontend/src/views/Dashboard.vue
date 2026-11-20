@@ -109,7 +109,10 @@
               <h2 class="text-base font-semibold text-gray-900">代理映射</h2>
               <div class="mt-1 text-xs text-gray-500">{{ proxies.length }} 个代理</div>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
+              <Button v-if="pendingProxies.length" variant="outline" size="sm" :disabled="loading" @click="openBindingReview(pendingProxies)">
+                批量确认（{{ pendingProxies.length }}）
+              </Button>
               <Button variant="outline" size="sm" @click="loadProxies" :disabled="loading">
                 {{ loading ? '重载中...' : '重载配置' }}
               </Button>
@@ -146,7 +149,11 @@
                         {{ proxy.paused ? '已暂停 · 地址归属未通过核验' : `${proxy.localIP} · ${proxy.binding.device}` }}
                       </div>
                       <div v-else class="mt-1 break-all text-xs text-gray-600">
-                        {{ proxy.candidate ? `待确认 · ${proxy.candidate}` : '手动目标' }}
+                        <template v-if="canConfirmBinding(proxy)">
+                          待确认 · {{ proxy.candidate }}
+                          <button type="button" class="ml-1 min-h-6 font-medium text-blue-700 hover:underline" @click="openBindingReview([proxy])">确认绑定</button>
+                        </template>
+                        <template v-else>手动目标</template>
                       </div>
                     </td>
                     <td class="px-2 py-2 text-gray-700">{{ proxy.localPort }}</td>
@@ -171,6 +178,40 @@
         </section>
       </div>
     </main>
+
+    <dialog ref="bindingReview" aria-labelledby="frp-review-title" class="w-[calc(100%-2rem)] max-w-xl rounded-lg border p-0 shadow-lg backdrop:bg-black/50" @cancel.prevent="closeBindingReview">
+      <form class="space-y-4 p-5" @submit.prevent="confirmBindings">
+        <h2 id="frp-review-title" class="text-base font-semibold">确认容器绑定</h2>
+        <p v-if="reviewLoading" role="status" class="text-sm text-gray-600">正在核对容器网卡…</p>
+        <p v-if="reviewError" role="alert" class="text-sm text-red-700">{{ reviewError }}</p>
+        <p v-if="reviewResult" role="status" class="text-sm text-gray-700">{{ reviewResult }}</p>
+        <template v-if="reviewRows.length">
+          <label v-if="reviewRows.length > 1" class="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" :checked="reviewAllSelected" :indeterminate.prop="!reviewAllSelected && selectedRules.length > 0" :disabled="confirmingBindings || !reviewTargets.length" @change="selectAllBindings($event.target.checked)" />
+            全选可确认规则
+          </label>
+          <ul class="max-h-[45dvh] divide-y overflow-y-auto rounded-md border">
+            <li v-for="row in reviewRows" :key="row.name" class="px-3 py-2">
+              <label class="flex items-start gap-3 text-sm">
+                <input v-model="selectedRules" class="mt-1" type="checkbox" :value="row.name" :disabled="confirmingBindings || !row.target || row.done" />
+                <span class="min-w-0 break-all">
+                  <span class="block font-medium">{{ row.name }} · 远端端口 {{ row.remotePort }}</span>
+                  <span class="block text-gray-600">{{ row.localIP }}:{{ row.localPort }} → {{ row.candidate }}<template v-if="row.target"> · {{ row.target.device }}</template></span>
+                  <span v-if="row.error" class="block text-red-700">{{ row.error }}</span>
+                  <span v-else-if="row.done" class="block text-green-700">已绑定</span>
+                </span>
+              </label>
+            </li>
+          </ul>
+        </template>
+        <div class="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" :disabled="confirmingBindings" @click="closeBindingReview">关闭</Button>
+          <Button type="submit" :disabled="reviewLoading || confirmingBindings || !selectedRules.length">
+            {{ confirmingBindings ? '绑定中…' : `确认绑定（${selectedRules.length}）` }}
+          </Button>
+        </div>
+      </form>
+    </dialog>
 
     <!-- 添加/编辑代理对话框 -->
     <div
@@ -239,7 +280,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
@@ -265,6 +306,78 @@ const selectedTarget = ref(null)
 const containerTargets = ref([])
 const loadingTargets = ref(false)
 const targetError = ref('')
+const bindingReview = ref(null)
+const reviewRows = ref([])
+const selectedRules = ref([])
+const reviewLoading = ref(false)
+const confirmingBindings = ref(false)
+const reviewError = ref('')
+const reviewResult = ref('')
+let reviewRequest = 0
+
+const canConfirmBinding = (proxy) => !proxy.binding && !!proxy.candidate && ['tcp', 'udp'].includes(proxy.type)
+const pendingProxies = computed(() => proxies.value.filter(canConfirmBinding))
+const reviewTargets = computed(() => reviewRows.value.filter(row => row.target && !row.done))
+const reviewAllSelected = computed(() => reviewTargets.value.length > 0 && reviewTargets.value.every(row => selectedRules.value.includes(row.name)))
+
+const selectAllBindings = (checked) => {
+  selectedRules.value = checked ? reviewTargets.value.map(row => row.name) : []
+}
+
+const openBindingReview = async (rules) => {
+  const request = ++reviewRequest
+  reviewRows.value = []
+  selectedRules.value = []
+  reviewError.value = ''
+  reviewResult.value = ''
+  reviewLoading.value = true
+  bindingReview.value.showModal()
+  try {
+    const { data } = await api.get('/proxies/container-targets', { timeout: 15000 })
+    if (request !== reviewRequest) return
+    reviewRows.value = rules.map(rule => {
+      const matches = (data.targets || []).filter(target => target.address === rule.localIP)
+      const target = matches.length === 1 && matches[0].container === rule.candidate ? matches[0] : null
+      return { ...rule, target, done: false, error: target ? '' : '地址归属已变化，请刷新列表后核对' }
+    })
+    if (rules.length === 1) selectAllBindings(true)
+  } catch (err) {
+    if (request === reviewRequest) reviewError.value = err.response?.data?.error || '无法读取容器网卡'
+  } finally {
+    if (request === reviewRequest) reviewLoading.value = false
+  }
+}
+
+const closeBindingReview = () => {
+  if (confirmingBindings.value) return
+  reviewRequest++
+  bindingReview.value.close()
+}
+
+const confirmBindings = async () => {
+  if (confirmingBindings.value) return
+  const rows = reviewTargets.value.filter(row => selectedRules.value.includes(row.name))
+  if (!rows.length) return
+  confirmingBindings.value = true
+  let succeeded = 0
+  try {
+    for (const row of rows) {
+      row.error = ''
+      try {
+        await api.post('/proxies/confirm-binding', { name: row.name, binding: row.target }, { timeout: 60000 })
+        row.done = true
+        succeeded++
+        selectedRules.value = selectedRules.value.filter(name => name !== row.name)
+      } catch (err) {
+        row.error = err.response?.data?.error || '无法确认绑定结果，请刷新列表核对'
+      }
+    }
+    reviewResult.value = `已绑定 ${succeeded} 条${succeeded < rows.length ? `，${rows.length - succeeded} 条需要处理` : ''}`
+    await loadProxies()
+  } finally {
+    confirmingBindings.value = false
+  }
+}
 const currentProxy = ref({
   name: '',
   type: 'tcp',

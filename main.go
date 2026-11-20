@@ -119,6 +119,7 @@ func main() {
 			// 代理管理
 			auth.GET("/proxies", handlers.GetProxyList)
 			auth.GET("/proxies/container-targets", handlers.GetFRPTargets)
+			auth.POST("/proxies/confirm-binding", handlers.ConfirmProxyBinding)
 			auth.POST("/proxies", handlers.AddProxy)
 			auth.PUT("/proxies", handlers.UpdateProxy)
 			auth.DELETE("/proxies", handlers.DeleteProxy)
@@ -131,6 +132,9 @@ func main() {
 			auth.GET("/lxc/storage", handlers.GetLxcStorage)
 			auth.POST("/lxc/storage/pools", handlers.CreateLxcStoragePool)
 			auth.GET("/lxc/storage/mounts/:name", handlers.GetLxcStorageMounts)
+			auth.POST("/lxc/storage/mounts/:name", handlers.SaveLxcStorageMount)
+			auth.PUT("/lxc/storage/mounts/:name/:device", handlers.SaveLxcStorageMount)
+			auth.DELETE("/lxc/storage/mounts/:name/:device", handlers.DeleteLxcStorageMount)
 			auth.GET("/lxc/storage/moves", handlers.GetLxcStorageMoves)
 			auth.POST("/lxc/storage/moves", handlers.StartLxcStorageMove)
 			auth.GET("/lxc/groups", handlers.GetLxcGroups)

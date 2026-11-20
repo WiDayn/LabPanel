@@ -185,6 +185,40 @@ func (s *FrpConfigService) DeleteProxy(index int, name string) error {
 	return s.editProxy(index, name, nil)
 }
 
+func (s *FrpConfigService) ConfirmBinding(name string, binding models.ProxyBinding) error {
+	frpConfigMu.Lock()
+	defer frpConfigMu.Unlock()
+	doc, err := s.readDocument()
+	if err != nil {
+		return err
+	}
+	for _, row := range doc.rules {
+		if row["name"] != name {
+			continue
+		}
+		state := doc.state[name]
+		if state.Binding != nil && *state.Binding == binding && row["localIP"] == binding.Address {
+			return nil
+		}
+		if state.Binding != nil || row["localIP"] != binding.Address || (row["type"] != "tcp" && row["type"] != "udp") {
+			return fmt.Errorf("规则目标或绑定状态已变化，请刷新后核对")
+		}
+		release, err := lockLxcOperation(binding.Container)
+		if err != nil {
+			return err
+		}
+		defer release()
+		verified, err := reserveFRPAddress(binding)
+		if err != nil {
+			return err
+		}
+		state.Binding = &verified
+		doc.state[name] = state
+		return s.apply(doc)
+	}
+	return fmt.Errorf("规则已变化，请刷新后重试")
+}
+
 func (s *FrpConfigService) editProxy(index int, name string, proxy *models.Proxy) error {
 	frpConfigMu.Lock()
 	defer frpConfigMu.Unlock()

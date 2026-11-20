@@ -34,6 +34,8 @@ type storageInstance struct {
 	Type            string
 	Status          string
 	Config          map[string]string
+	Devices         map[string]map[string]string
+	Profiles        []string
 	ExpandedDevices map[string]map[string]string `json:"expanded_devices"`
 }
 
@@ -177,7 +179,10 @@ func LxcStorageMounts(name string) ([]models.LxcStorageMount, error) {
 	mounts := make([]models.LxcStorageMount, 0)
 	for name, device := range instance.ExpandedDevices {
 		if device["type"] == "disk" && device["path"] != "/" {
-			mounts = append(mounts, models.LxcStorageMount{Name: name, Source: device["source"], Path: device["path"], Pool: device["pool"]})
+			mounts = append(mounts, models.LxcStorageMount{
+				Name: name, Source: device["source"], Path: device["path"], Pool: device["pool"],
+				Readonly: device["readonly"] == "true", Editable: editableDirectoryMount(instance.Devices[name]),
+			})
 		}
 	}
 	sort.Slice(mounts, func(left, right int) bool { return mounts[left].Name < mounts[right].Name })

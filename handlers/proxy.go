@@ -33,6 +33,22 @@ func GetFRPTargets(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"targets": targets})
 }
 
+func ConfirmProxyBinding(c *gin.Context) {
+	var req struct {
+		Name    string              `json:"name" binding:"required"`
+		Binding models.ProxyBinding `json:"binding"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择规则和容器网卡"})
+		return
+	}
+	if err := service.NewFrpConfigService().ConfirmBinding(req.Name, req.Binding); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func AddProxy(c *gin.Context) {
 	var req models.AddProxyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
