@@ -41,9 +41,9 @@
           <div class="border-t border-gray-200 p-4">
             <div class="grid gap-4 xl:grid-cols-2">
               <div
-                v-for="gpu in status.gpus"
+                v-for="{ gpu, series } in gpuCharts"
                 :key="gpu.uuid"
-                class="rounded-md border border-gray-200 bg-white p-4 shadow-sm"
+                class="min-w-0 rounded-md border border-gray-200 bg-white p-4 shadow-sm"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -76,11 +76,28 @@
                       <div>温度</div>
                     </div>
                   </div>
-                  <GpuMemoryChart
-                    :series="gpu.memorySeries || []"
-                    :processes="gpu.processes || []"
-                    :total-memory="gpu.memoryTotalMiB"
-                  />
+                  <div>
+                    <div class="flex items-center justify-between gap-3 text-xs">
+                      <div class="font-medium text-gray-700">容器显存占用</div>
+                      <div class="text-gray-500">{{ series.length }} 条曲线</div>
+                    </div>
+                    <TimeSeriesChart
+                      class="mt-2"
+                      :label="`GPU ${gpu.index} 容器显存占用`"
+                      :series="series"
+                      :minimum-max="gpu.memoryTotalMiB"
+                      :format-value="formatMemory"
+                      :range="rangeKey"
+                      empty-text="等待显存采样数据"
+                    />
+                    <div v-if="series.length" class="mt-3 flex flex-wrap gap-3">
+                      <div v-for="item in series" :key="item.id" class="flex min-w-0 items-center gap-2 text-xs text-gray-600">
+                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: item.color }" />
+                        <span class="min-w-0 break-all font-medium text-gray-800">{{ item.name }}</span>
+                        <span class="shrink-0 tabular-nums">{{ item.latest }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -156,14 +173,16 @@
 <script setup>
 import SortableHeader from '@/components/ui/SortableHeader.vue'
 import { useTableSort } from '@/utils/tableSort'
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import TimeSeriesChart from '@/components/monitor/TimeSeriesChart.vue'
 
 const totalSeriesColor = '#111827'
 const hostSeriesColor = '#6b7280'
+const formatMemory = value => `${value.toFixed(0)} MiB`
 const ownerChartColorVariants = {
   blue: ['#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8'],
   emerald: ['#34d399', '#10b981', '#059669', '#047857'],
@@ -177,144 +196,25 @@ const ownerChartColorVariants = {
   indigo: ['#818cf8', '#6366f1', '#4f46e5', '#4338ca'],
 }
 
-const GpuMemoryChart = defineComponent({
-  name: 'GpuMemoryChart',
-  props: {
-    series: { type: Array, required: true },
-    processes: { type: Array, default: () => [] },
-    totalMemory: { type: Number, required: true },
-  },
-  setup(props) {
-    const width = 680
-    const height = 220
-    const padding = { top: 18, right: 18, bottom: 28, left: 56 }
-
-    const maxValue = computed(() => {
-      const values = props.series.flatMap((item) => (item.points || []).map((point) => Number(point.usedMemoryMiB || 0)))
-      return Math.max(...values, props.totalMemory || 0, 1)
-    })
-
-    const linePath = (points) => {
-      if (!points?.length) return ''
-      const usableWidth = width - padding.left - padding.right
-      const usableHeight = height - padding.top - padding.bottom
-      return points.map((point, index) => {
-        const x = padding.left + (points.length === 1 ? usableWidth : (index / (points.length - 1)) * usableWidth)
-        const y = padding.top + usableHeight - (Number(point.usedMemoryMiB || 0) / maxValue.value) * usableHeight
-        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
-      }).join(' ')
-    }
-
-    const latestValue = (item) => {
-      const points = item.points || []
-      if (!points.length) return 0
-      return Number(points[points.length - 1].usedMemoryMiB || 0)
-    }
-    const containerGroupColors = computed(() => {
-      const colors = new Map()
-      for (const process of props.processes || []) {
-        if (process.ownerType !== 'container' || !process.containerName || colors.has(process.containerName)) {
-          continue
-        }
-        const groupColor = Array.isArray(process.groups) && process.groups.length ? process.groups[0]?.color : ''
-        colors.set(process.containerName, groupColor || 'blue')
-      }
-      return colors
-    })
-    const seriesColor = (item) => {
-      if (item.ownerType === 'total') {
-        return totalSeriesColor
-      }
-      if (item.ownerType !== 'container') {
-        return hostSeriesColor
-      }
-      const groupColor = containerGroupColors.value.get(item.containerName) || 'blue'
-      const variants = ownerChartColorVariants[groupColor] || ownerChartColorVariants.blue
-      return variants[stableColorIndex(item.containerName || item.label, variants.length)]
-    }
-    const xTicks = computed(() => {
-      const longestSeries = props.series.reduce((longest, item) => {
-        const points = item.points || []
-        return points.length > longest.length ? points : longest
-      }, [])
-      return buildTimeTicks(longestSeries, width, padding)
-    })
-
-    return () => h('div', { class: 'mt-4' }, [
-      h('div', { class: 'flex items-center justify-between gap-3' }, [
-        h('div', { class: 'text-xs font-medium text-gray-700' }, '容器显存占用'),
-        h('div', { class: 'text-xs text-gray-500' }, `${props.series.length} 条曲线`),
-      ]),
-      h('div', { class: 'mt-2 h-56 overflow-hidden rounded-md border border-gray-200 bg-white' }, [
-        props.series.length
-          ? h('svg', { viewBox: `0 0 ${width} ${height}`, class: 'h-full w-full' }, [
-              h('line', { x1: padding.left, y1: height - padding.bottom, x2: width - padding.right, y2: height - padding.bottom, stroke: '#e5e7eb' }),
-              h('line', { x1: padding.left, y1: padding.top, x2: padding.left, y2: height - padding.bottom, stroke: '#e5e7eb' }),
-              h('text', { x: padding.left - 8, y: padding.top + 4, 'text-anchor': 'end', class: 'fill-gray-500 text-[10px]' }, `${maxValue.value.toFixed(0)} MiB`),
-              h('text', { x: padding.left - 8, y: height - padding.bottom, 'text-anchor': 'end', class: 'fill-gray-500 text-[10px]' }, '0 MiB'),
-              ...xTicks.value.flatMap((tick) => [
-                h('line', { x1: tick.x, y1: height - padding.bottom, x2: tick.x, y2: height - padding.bottom + 4, stroke: '#d1d5db' }),
-                h('text', { x: tick.x, y: height - 10, 'text-anchor': 'middle', class: 'fill-gray-500 text-[10px]' }, tick.label),
-              ]),
-              ...props.series.map((item) => h('path', {
-                d: linePath(item.points || []),
-                fill: 'none',
-                stroke: seriesColor(item),
-                'stroke-width': 2.5,
-                'stroke-linejoin': 'round',
-                'stroke-linecap': 'round',
-              })),
-            ])
-          : h('div', { class: 'flex h-full items-center justify-center text-sm text-gray-500' }, '等待显存采样数据'),
-      ]),
-      props.series.length
-        ? h('div', { class: 'mt-3 flex flex-wrap gap-3' }, props.series.map((item) =>
-            h('div', { class: 'flex items-center gap-2 text-xs text-gray-600' }, [
-              h('span', { class: 'h-2.5 w-2.5 rounded-full', style: { backgroundColor: seriesColor(item) } }),
-              h('span', { class: 'font-medium text-gray-800' }, item.label),
-              h('span', `${latestValue(item).toFixed(0)} MiB`),
-            ])
-          ))
-        : null,
-    ])
-  },
-})
-
-const buildTimeTicks = (points, width, padding) => {
-  if (!points?.length) {
-    return []
-  }
-  const maxTicks = 4
-  const tickCount = Math.min(maxTicks, points.length)
-  const indexes = new Set()
-  if (tickCount === 1) {
-    indexes.add(points.length - 1)
-  } else {
-    for (let i = 0; i < tickCount; i++) {
-      indexes.add(Math.round((i * (points.length - 1)) / (tickCount - 1)))
+function memoryChartSeries(gpu) {
+  const groupColors = new Map()
+  for (const process of gpu.processes || []) {
+    if (process.ownerType === 'container' && process.containerName && !groupColors.has(process.containerName)) {
+      groupColors.set(process.containerName, process.groups?.[0]?.color)
     }
   }
-
-  const usableWidth = width - padding.left - padding.right
-  return [...indexes].sort((a, b) => a - b).map((index) => {
-    const x = padding.left + (points.length === 1 ? usableWidth : (index / (points.length - 1)) * usableWidth)
+  return (gpu.memorySeries || []).map(({ ownerType, containerName, label, points }) => {
+    let color = ownerType === 'total' ? totalSeriesColor : hostSeriesColor
+    if (ownerType === 'container') {
+      const variants = ownerChartColorVariants[groupColors.get(containerName)] || ownerChartColorVariants.blue
+      color = variants[stableColorIndex(containerName || label, variants.length)]
+    }
+    const latest = points?.at(-1)?.usedMemoryMiB
     return {
-      x,
-      label: formatAxisTime(points[index]?.timestamp),
+      id: `${ownerType}:${containerName || label}`, name: label, color, points: points || [], valueKey: 'usedMemoryMiB',
+      latest: Number.isFinite(latest) ? formatMemory(latest) : '-',
     }
-  }).filter((tick) => tick.label)
-}
-
-const formatAxisTime = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const now = new Date()
-  const sameDay = date.toDateString() === now.toDateString()
-  if (sameDay) {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  }
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+  })
 }
 
 const loading = ref(false)
@@ -326,6 +226,7 @@ const status = ref({
   updatedAt: '',
   gpus: [],
 })
+const gpuCharts = computed(() => (status.value.gpus || []).map(gpu => ({ gpu, series: memoryChartSeries(gpu) })))
 let refreshTimer = null
 
 const rangeOptions = [

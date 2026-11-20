@@ -5,9 +5,6 @@ import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import Lxc from './views/Lxc.vue'
 import Docker from './views/Docker.vue'
-import HostMonitor from './views/HostMonitor.vue'
-import LxcMonitor from './views/LxcMonitor.vue'
-import GpuMonitor from './views/GpuMonitor.vue'
 import Document from './views/Document.vue'
 import SystemSettings from './views/SystemSettings.vue'
 import { loadPublicConfig } from './utils/publicConfig'
@@ -20,9 +17,9 @@ const routes = [
   { path: '/port-forwards', redirect: '/dashboard' },
   { path: '/lxc', name: 'Lxc', component: Lxc, meta: { requiresAuth: true } },
   { path: '/docker', name: 'Docker', component: Docker, meta: { requiresAuth: true } },
-  { path: '/overview', name: 'HostMonitor', component: HostMonitor, meta: { requiresAuth: true } },
-  { path: '/lxc-monitor', name: 'LxcMonitor', component: LxcMonitor, meta: { requiresAuth: true } },
-  { path: '/gpu-monitor', name: 'GpuMonitor', component: GpuMonitor, meta: { requiresAuth: true } },
+  { path: '/overview', name: 'HostMonitor', component: () => import('./views/HostMonitor.vue'), meta: { requiresAuth: true } },
+  { path: '/lxc-monitor', name: 'LxcMonitor', component: () => import('./views/LxcMonitor.vue'), meta: { requiresAuth: true } },
+  { path: '/gpu-monitor', name: 'GpuMonitor', component: () => import('./views/GpuMonitor.vue'), meta: { requiresAuth: true } },
   { path: '/document', name: 'Document', component: Document, meta: { requiresAuth: true } },
   { path: '/settings', name: 'SystemSettings', component: SystemSettings, meta: { requiresAuth: true } },
 ]

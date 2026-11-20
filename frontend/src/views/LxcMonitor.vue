@@ -125,11 +125,12 @@
                   <h2 class="text-base font-semibold text-gray-900">指标图表</h2>
                   <div class="mt-1 text-xs text-gray-500">{{ seriesPoints.length }} 个采样点</div>
                 </div>
-                <div class="mt-4 grid gap-4 xl:grid-cols-2">
+                <div :key="currentKey" class="mt-4 grid gap-4 xl:grid-cols-2">
                   <MetricChart
                     title="CPU 使用率"
                     color="#2563eb"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="cpuPercent"
                     :format-value="formatPercent"
                   />
@@ -137,6 +138,7 @@
                     title="内存使用"
                     color="#16a34a"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="memoryBytes"
                     :format-value="formatBytes"
                   />
@@ -144,6 +146,7 @@
                     title="磁盘占用"
                     color="#ca8a04"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="diskUsageBytes"
                     :format-value="formatBytes"
                   />
@@ -151,6 +154,7 @@
                     title="网络下行"
                     color="#0891b2"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="networkRxBps"
                     :format-value="formatRate"
                   />
@@ -158,6 +162,7 @@
                     title="网络上行"
                     color="#7c3aed"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="networkTxBps"
                     :format-value="formatRate"
                   />
@@ -165,6 +170,7 @@
                     title="磁盘读取"
                     color="#ea580c"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="diskReadBps"
                     :format-value="formatRate"
                   />
@@ -172,6 +178,7 @@
                     title="磁盘写入"
                     color="#dc2626"
                     :points="seriesPoints"
+                    :range="rangeKey"
                     value-key="diskWriteBps"
                     :format-value="formatRate"
                   />
@@ -186,112 +193,12 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ContainerTag from '@/components/ui/ContainerTag.vue'
-
-const MetricChart = defineComponent({
-  name: 'MetricChart',
-  props: {
-    title: { type: String, required: true },
-    color: { type: String, required: true },
-    points: { type: Array, required: true },
-    valueKey: { type: String, required: true },
-    formatValue: { type: Function, required: true },
-  },
-  setup(props) {
-    const width = 640
-    const height = 220
-    const padding = { top: 20, right: 16, bottom: 28, left: 48 }
-
-    const values = computed(() => props.points.map((point) => Number(point[props.valueKey] || 0)))
-    const maxValue = computed(() => Math.max(...values.value, 0))
-    const latestValue = computed(() => values.value.length ? values.value[values.value.length - 1] : 0)
-    const pathData = computed(() => {
-      if (!props.points.length) {
-        return ''
-      }
-      const usableWidth = width - padding.left - padding.right
-      const usableHeight = height - padding.top - padding.bottom
-      const denominator = Math.max(maxValue.value, 1)
-      return props.points.map((point, index) => {
-        const x = padding.left + (props.points.length === 1 ? usableWidth : (index / (props.points.length - 1)) * usableWidth)
-        const value = Number(point[props.valueKey] || 0)
-        const y = padding.top + usableHeight - (value / denominator) * usableHeight
-        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
-      }).join(' ')
-    })
-    const xTicks = computed(() => buildTimeTicks(props.points, width, padding))
-
-    return () => h(Card, { class: 'p-4' }, () => [
-      h('div', { class: 'flex items-start justify-between gap-3' }, [
-        h('div', [
-          h('h3', { class: 'text-sm font-semibold text-gray-900' }, props.title),
-          h('div', { class: 'mt-1 text-xs text-gray-500' }, `${props.points.length} 个采样点`),
-        ]),
-        h('div', { class: 'text-right' }, [
-          h('div', { class: 'text-sm font-semibold text-gray-900' }, props.formatValue(latestValue.value)),
-          h('div', { class: 'text-xs text-gray-500' }, '当前'),
-        ]),
-      ]),
-      h('div', { class: 'mt-3 h-56 w-full overflow-hidden rounded-md border border-gray-200 bg-white' }, [
-        props.points.length
-          ? h('svg', { viewBox: `0 0 ${width} ${height}`, class: 'h-full w-full' }, [
-              h('line', { x1: padding.left, y1: height - padding.bottom, x2: width - padding.right, y2: height - padding.bottom, stroke: '#e5e7eb' }),
-              h('line', { x1: padding.left, y1: padding.top, x2: padding.left, y2: height - padding.bottom, stroke: '#e5e7eb' }),
-              h('text', { x: padding.left - 8, y: padding.top + 4, 'text-anchor': 'end', class: 'fill-gray-500 text-[10px]' }, props.formatValue(maxValue.value)),
-              h('text', { x: padding.left - 8, y: height - padding.bottom, 'text-anchor': 'end', class: 'fill-gray-500 text-[10px]' }, props.formatValue(0)),
-              ...xTicks.value.flatMap((tick) => [
-                h('line', { x1: tick.x, y1: height - padding.bottom, x2: tick.x, y2: height - padding.bottom + 4, stroke: '#d1d5db' }),
-                h('text', { x: tick.x, y: height - 10, 'text-anchor': 'middle', class: 'fill-gray-500 text-[10px]' }, tick.label),
-              ]),
-              h('path', { d: pathData.value, fill: 'none', stroke: props.color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }),
-            ])
-          : h('div', { class: 'flex h-full items-center justify-center text-sm text-gray-500' }, '等待采样数据'),
-      ]),
-    ])
-  },
-})
-
-const buildTimeTicks = (points, width, padding) => {
-  if (!points?.length) {
-    return []
-  }
-  const maxTicks = 4
-  const tickCount = Math.min(maxTicks, points.length)
-  const indexes = new Set()
-  if (tickCount === 1) {
-    indexes.add(points.length - 1)
-  } else {
-    for (let i = 0; i < tickCount; i++) {
-      indexes.add(Math.round((i * (points.length - 1)) / (tickCount - 1)))
-    }
-  }
-
-  const usableWidth = width - padding.left - padding.right
-  return [...indexes].sort((a, b) => a - b).map((index) => {
-    const x = padding.left + (points.length === 1 ? usableWidth : (index / (points.length - 1)) * usableWidth)
-    return {
-      x,
-      label: formatAxisTime(points[index]?.timestamp),
-    }
-  }).filter((tick) => tick.label)
-}
-
-const formatAxisTime = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const now = new Date()
-  const sameDay = date.toDateString() === now.toDateString()
-  if (sameDay) {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  }
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
-}
+import MetricChart from '@/components/monitor/MetricChart.vue'
 
 const loading = ref(false)
 const error = ref('')
