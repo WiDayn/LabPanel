@@ -9,16 +9,24 @@ type HostInfoResponse struct {
 }
 
 type HostMetricsPoint struct {
-	Timestamp        time.Time `json:"timestamp"`
-	CPUPercent       float64   `json:"cpuPercent"`
-	CPUMHz           float64   `json:"cpuMhz"`
-	TemperatureC     float64   `json:"temperatureC"`
-	MemoryUsedBytes  int64     `json:"memoryUsedBytes"`
-	MemoryTotalBytes int64     `json:"memoryTotalBytes"`
-	NetworkRxBps     float64   `json:"networkRxBps"`
-	NetworkTxBps     float64   `json:"networkTxBps"`
-	NetworkRxBytes   int64     `json:"networkRxBytes"`
-	NetworkTxBytes   int64     `json:"networkTxBytes"`
+	Timestamp        time.Time         `json:"timestamp"`
+	CPUPercent       float64           `json:"cpuPercent"`
+	CPUMHz           float64           `json:"cpuMhz"`
+	TemperatureC     float64           `json:"temperatureC"`
+	MemoryUsedBytes  int64             `json:"memoryUsedBytes"`
+	MemoryTotalBytes int64             `json:"memoryTotalBytes"`
+	NetworkRxBps     float64           `json:"networkRxBps"`
+	NetworkTxBps     float64           `json:"networkTxBps"`
+	NetworkRxBytes   int64             `json:"networkRxBytes"`
+	NetworkTxBytes   int64             `json:"networkTxBytes"`
+	NetworkPorts     []HostNetworkPort `json:"networkPorts"`
+}
+
+type HostNetworkPort struct {
+	Name   string   `json:"name"`
+	LinkUp bool     `json:"linkUp"`
+	RxBps  *float64 `json:"rxBps"`
+	TxBps  *float64 `json:"txBps"`
 }
 
 type HostProcess struct {

@@ -150,20 +150,20 @@
                 value-key="memoryUsedBytes"
                 :format-value="formatBytes"
               />
-              <MetricChart
+              <NetworkMetricChart
                 title="网络下行"
-                color="#0891b2"
                 :points="points"
+                :summary="summary"
                 :range="rangeKey"
-                value-key="networkRxBps"
+                direction="rx"
                 :format-value="formatRate"
               />
-              <MetricChart
+              <NetworkMetricChart
                 title="网络上行"
-                color="#dc2626"
                 :points="points"
+                :summary="summary"
                 :range="rangeKey"
-                value-key="networkTxBps"
+                direction="tx"
                 :format-value="formatRate"
               />
             </div>
@@ -277,6 +277,7 @@ import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import MetricChart from '@/components/monitor/MetricChart.vue'
+import NetworkMetricChart from '@/components/monitor/NetworkMetricChart.vue'
 
 const rangeOptions = [
   { label: '1h', value: '1h' },
@@ -374,12 +375,12 @@ const summaryCards = computed(() => [
   {
     label: '网络下行',
     value: formatRate(summary.value.networkRxBps),
-    detail: `累计 ${formatBytes(summary.value.networkRxBytes)}`,
+    detail: `物理网口累计 ${formatBytes(summary.value.networkRxBytes)}`,
   },
   {
     label: '网络上行',
     value: formatRate(summary.value.networkTxBps),
-    detail: `累计 ${formatBytes(summary.value.networkTxBytes)}`,
+    detail: `物理网口累计 ${formatBytes(summary.value.networkTxBytes)}`,
   },
   {
     label: '进程',

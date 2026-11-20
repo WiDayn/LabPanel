@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,8 +40,7 @@ type hostMetricsRaw struct {
 	TemperatureC     float64
 	MemoryUsedBytes  int64
 	MemoryTotalBytes int64
-	NetworkRxBytes   int64
-	NetworkTxBytes   int64
+	NetworkPorts     map[string]hostNetworkCounters
 }
 
 type hostMemoryOverview struct {
@@ -108,13 +108,11 @@ func (s *HostMetricsService) Collect() {
 		TemperatureC:     raw.TemperatureC,
 		MemoryUsedBytes:  raw.MemoryUsedBytes,
 		MemoryTotalBytes: raw.MemoryTotalBytes,
-		NetworkRxBytes:   raw.NetworkRxBytes,
-		NetworkTxBytes:   raw.NetworkTxBytes,
-		NetworkRxBps:     0,
-		NetworkTxBps:     0,
 		CPUPercent:       0,
 	}
 
+	var previousPorts map[string]hostNetworkCounters
+	var elapsed float64
 	if s.hasRaw {
 		sameBoot := raw.BootID == "" || s.lastRaw.BootID == "" || raw.BootID == s.lastRaw.BootID
 		if sameBoot && raw.CPUTotal >= s.lastRaw.CPUTotal && raw.CPUIdle >= s.lastRaw.CPUIdle {
@@ -125,12 +123,12 @@ func (s *HostMetricsService) Collect() {
 			}
 		}
 
-		elapsed := raw.Timestamp.Sub(s.lastRaw.Timestamp).Seconds()
-		if sameBoot && elapsed > 0 {
-			point.NetworkRxBps = positiveRate(raw.NetworkRxBytes, s.lastRaw.NetworkRxBytes, elapsed)
-			point.NetworkTxBps = positiveRate(raw.NetworkTxBytes, s.lastRaw.NetworkTxBytes, elapsed)
+		if sameBoot {
+			previousPorts = s.lastRaw.NetworkPorts
+			elapsed = raw.Timestamp.Sub(s.lastRaw.Timestamp).Seconds()
 		}
 	}
+	addHostNetworkMetrics(&point, raw.NetworkPorts, previousPorts, elapsed)
 
 	if store := GetMetricsStore(); store != nil {
 		_ = store.SaveHostRaw(raw)
@@ -232,7 +230,6 @@ func (s *HostMetricsService) collectIfStale() {
 func collectHostMetricsRaw(now time.Time) hostMetricsRaw {
 	idle, total := readCPUStat()
 	memoryUsed, memoryTotal := readMemoryUsage()
-	networkRx, networkTx := readNetworkTotals()
 
 	return hostMetricsRaw{
 		Timestamp:        now,
@@ -243,8 +240,7 @@ func collectHostMetricsRaw(now time.Time) hostMetricsRaw {
 		TemperatureC:     readTemperatureC(),
 		MemoryUsedBytes:  memoryUsed,
 		MemoryTotalBytes: memoryTotal,
-		NetworkRxBytes:   networkRx,
-		NetworkTxBytes:   networkTx,
+		NetworkPorts:     readHostNetworkPorts("/proc/net/dev", "/sys/class/net"),
 	}
 }
 
@@ -351,32 +347,6 @@ func readMemoryUsage() (int64, int64) {
 		used = 0
 	}
 	return used, total
-}
-
-func readNetworkTotals() (int64, int64) {
-	data, err := os.ReadFile("/proc/net/dev")
-	if err != nil {
-		return 0, 0
-	}
-	var rxTotal int64
-	var txTotal int64
-	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.Contains(line, ":") {
-			continue
-		}
-		parts := strings.SplitN(line, ":", 2)
-		iface := strings.TrimSpace(parts[0])
-		if iface == "" || iface == "lo" {
-			continue
-		}
-		fields := strings.Fields(parts[1])
-		if len(fields) < 16 {
-			continue
-		}
-		rxTotal += parseInt64Default(fields[0], 0)
-		txTotal += parseInt64Default(fields[8], 0)
-	}
-	return rxTotal, txTotal
 }
 
 func readCPUMHz() float64 {
@@ -946,6 +916,7 @@ func averageHostMetricsBucket(points []models.HostMetricsPoint) models.HostMetri
 	result.NetworkTxBps /= divisor
 	result.NetworkRxBytes /= int64(len(points))
 	result.NetworkTxBytes /= int64(len(points))
+	result.NetworkPorts = averageHostNetworkPorts(points)
 	return result
 }
 
@@ -958,7 +929,19 @@ func sameHostMetricsPoint(a, b models.HostMetricsPoint) bool {
 		a.NetworkRxBps == b.NetworkRxBps &&
 		a.NetworkTxBps == b.NetworkTxBps &&
 		a.NetworkRxBytes == b.NetworkRxBytes &&
-		a.NetworkTxBytes == b.NetworkTxBytes
+		a.NetworkTxBytes == b.NetworkTxBytes &&
+		(a.NetworkPorts == nil) == (b.NetworkPorts == nil) &&
+		slices.EqualFunc(a.NetworkPorts, b.NetworkPorts, func(a, b models.HostNetworkPort) bool {
+			return a.Name == b.Name && a.LinkUp == b.LinkUp &&
+				equalHostNetworkRate(a.RxBps, b.RxBps) && equalHostNetworkRate(a.TxBps, b.TxBps)
+		})
+}
+
+func equalHostNetworkRate(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func hostRangeDuration(rangeKey string) time.Duration {

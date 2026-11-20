@@ -3,6 +3,7 @@ package service
 import (
 	"LabPanel/models"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -204,28 +205,50 @@ func (s *MetricsStore) initSchema() error {
 			return err
 		}
 	}
+	for _, table := range []string{"host_metric_points", "host_metric_raw_state"} {
+		var exists int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'network_ports'`, table).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN network_ports TEXT NOT NULL DEFAULT 'null'`); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
 func (s *MetricsStore) SaveHostRaw(raw hostMetricsRaw) error {
 	return s.enqueueWrite("host_raw", func(db *sql.DB) error {
-		_, err := db.Exec(
+		ports, err := json.Marshal(raw.NetworkPorts)
+		if err != nil {
+			return err
+		}
+		var rx, tx int64
+		for _, port := range raw.NetworkPorts {
+			rx += port.RxBytes
+			tx += port.TxBytes
+		}
+		_, err = db.Exec(
 			`INSERT INTO host_metric_raw_state
-				(id, timestamp_ns, boot_id, cpu_idle, cpu_total, network_rx_bytes, network_tx_bytes)
-			 VALUES (1, ?, ?, ?, ?, ?, ?)
+				(id, timestamp_ns, boot_id, cpu_idle, cpu_total, network_rx_bytes, network_tx_bytes, network_ports)
+			 VALUES (1, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(id) DO UPDATE SET
 				timestamp_ns=excluded.timestamp_ns,
 				boot_id=excluded.boot_id,
 				cpu_idle=excluded.cpu_idle,
 				cpu_total=excluded.cpu_total,
 				network_rx_bytes=excluded.network_rx_bytes,
-				network_tx_bytes=excluded.network_tx_bytes`,
+				network_tx_bytes=excluded.network_tx_bytes,
+				network_ports=excluded.network_ports`,
 			timeToNano(raw.Timestamp),
 			raw.BootID,
 			uint64ToInt64(raw.CPUIdle),
 			uint64ToInt64(raw.CPUTotal),
-			raw.NetworkRxBytes,
-			raw.NetworkTxBytes,
+			rx,
+			tx,
+			string(ports),
 		)
 		return err
 	})
@@ -236,10 +259,11 @@ func (s *MetricsStore) LoadHostRaw() (hostMetricsRaw, bool, error) {
 	var timestampNS int64
 	var cpuIdle int64
 	var cpuTotal int64
+	var ports string
 	err := s.db.QueryRow(
-		`SELECT timestamp_ns, boot_id, cpu_idle, cpu_total, network_rx_bytes, network_tx_bytes
+		`SELECT timestamp_ns, boot_id, cpu_idle, cpu_total, network_ports
 		 FROM host_metric_raw_state WHERE id = 1`,
-	).Scan(&timestampNS, &raw.BootID, &cpuIdle, &cpuTotal, &raw.NetworkRxBytes, &raw.NetworkTxBytes)
+	).Scan(&timestampNS, &raw.BootID, &cpuIdle, &cpuTotal, &ports)
 	if err == sql.ErrNoRows {
 		return raw, false, nil
 	}
@@ -249,16 +273,23 @@ func (s *MetricsStore) LoadHostRaw() (hostMetricsRaw, bool, error) {
 	raw.Timestamp = nanoToTime(timestampNS)
 	raw.CPUIdle = uint64(cpuIdle)
 	raw.CPUTotal = uint64(cpuTotal)
+	if err := json.Unmarshal([]byte(ports), &raw.NetworkPorts); err != nil {
+		return raw, false, err
+	}
 	return raw, true, nil
 }
 
 func (s *MetricsStore) InsertHostMetric(point models.HostMetricsPoint) error {
 	return s.enqueueWrite("host_metric", func(db *sql.DB) error {
-		_, err := db.Exec(
+		ports, err := json.Marshal(point.NetworkPorts)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(
 			`INSERT OR REPLACE INTO host_metric_points
 				(timestamp_ns, cpu_percent, cpu_mhz, temperature_c, memory_used_bytes, memory_total_bytes,
-				 network_rx_bps, network_tx_bps, network_rx_bytes, network_tx_bytes)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				 network_rx_bps, network_tx_bps, network_rx_bytes, network_tx_bytes, network_ports)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			timeToNano(point.Timestamp),
 			point.CPUPercent,
 			point.CPUMHz,
@@ -269,6 +300,7 @@ func (s *MetricsStore) InsertHostMetric(point models.HostMetricsPoint) error {
 			point.NetworkTxBps,
 			point.NetworkRxBytes,
 			point.NetworkTxBytes,
+			string(ports),
 		)
 		return err
 	})
@@ -277,7 +309,7 @@ func (s *MetricsStore) InsertHostMetric(point models.HostMetricsPoint) error {
 func (s *MetricsStore) LoadHostMetricsSince(since time.Time) ([]models.HostMetricsPoint, error) {
 	rows, err := s.db.Query(
 		`SELECT timestamp_ns, cpu_percent, cpu_mhz, temperature_c, memory_used_bytes, memory_total_bytes,
-		        network_rx_bps, network_tx_bps, network_rx_bytes, network_tx_bytes
+		        network_rx_bps, network_tx_bps, network_rx_bytes, network_tx_bytes, network_ports
 		   FROM host_metric_points
 		  WHERE timestamp_ns >= ?
 		  ORDER BY timestamp_ns ASC`,
@@ -292,6 +324,7 @@ func (s *MetricsStore) LoadHostMetricsSince(since time.Time) ([]models.HostMetri
 	for rows.Next() {
 		var point models.HostMetricsPoint
 		var timestampNS int64
+		var ports string
 		if err := rows.Scan(
 			&timestampNS,
 			&point.CPUPercent,
@@ -303,10 +336,14 @@ func (s *MetricsStore) LoadHostMetricsSince(since time.Time) ([]models.HostMetri
 			&point.NetworkTxBps,
 			&point.NetworkRxBytes,
 			&point.NetworkTxBytes,
+			&ports,
 		); err != nil {
 			return nil, err
 		}
 		point.Timestamp = nanoToTime(timestampNS)
+		if err := json.Unmarshal([]byte(ports), &point.NetworkPorts); err != nil {
+			return nil, err
+		}
 		points = append(points, point)
 	}
 	return points, rows.Err()
