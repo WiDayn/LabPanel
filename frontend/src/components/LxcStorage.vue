@@ -1,4 +1,6 @@
 <script setup>
+import SortableHeader from '@/components/ui/SortableHeader.vue'
+import { useTableSort } from '@/utils/tableSort'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
@@ -142,6 +144,7 @@ onBeforeUnmount(() => {
   disposed = true
   window.clearTimeout(pollTimer)
 })
+const poolTable = useTableSort(() => pools.value, { location: row => row.source || row.driver, count: row => counts.value.get(row.name) || 0 })
 </script>
 
 <template>
@@ -174,15 +177,15 @@ onBeforeUnmount(() => {
       <p v-if="!pools.length && loading" class="text-sm text-gray-600">正在读取存储池…</p>
       <p v-else-if="!pools.length && !error" class="text-sm text-gray-600">暂无存储池</p>
       <div v-if="pools.length" class="overflow-x-auto">
-        <table class="w-full min-w-[520px] text-left text-sm">
-          <thead class="text-xs text-gray-600">
-            <tr><th class="py-2 pr-3">名称</th><th class="py-2 pr-3">位置</th><th class="py-2 pr-3">可用 / 总计</th><th class="py-2 text-right">容器</th></tr>
+        <table class="panel-table w-full min-w-[520px] text-left text-sm">
+          <thead>
+            <tr><SortableHeader :sort="poolTable" column="name" label="名称" class="py-2 pr-3" /><SortableHeader :sort="poolTable" column="location" label="位置" class="py-2 pr-3" /><SortableHeader :sort="poolTable" column="availableBytes" label="可用 / 总计" numeric class="py-2 pr-3" /><SortableHeader :sort="poolTable" column="count" label="容器" numeric class="py-2 text-right" /></tr>
           </thead>
           <tbody>
-            <tr v-for="pool in pools" :key="pool.name" class="border-t">
+            <tr v-for="pool in poolTable.rows" :key="pool.name" class="border-t">
               <td class="break-all py-2 pr-3 font-medium">{{ pool.name }}</td>
               <td class="break-all py-2 pr-3 text-gray-600">{{ pool.source || pool.driver }}</td>
-              <td class="whitespace-nowrap py-2 pr-3 tabular-nums">{{ formatSize(pool.availableBytes) }} / {{ formatSize(pool.totalBytes) }}</td>
+              <td class="whitespace-nowrap py-2 pr-3 text-right tabular-nums">{{ formatSize(pool.availableBytes) }} / {{ formatSize(pool.totalBytes) }}</td>
               <td class="py-2 text-right tabular-nums">{{ counts.get(pool.name) || 0 }}</td>
             </tr>
           </tbody>

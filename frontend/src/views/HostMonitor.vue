@@ -196,20 +196,20 @@
                       <span class="h-6 w-6 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></span>
                     </div>
                     <div v-else-if="displayedProcesses.length" :key="processViewMode" class="overflow-x-auto">
-                      <table class="w-full min-w-[980px] table-fixed border-collapse text-sm">
+                      <table class="panel-table w-full min-w-[980px] table-fixed border-collapse text-sm">
                         <thead>
                           <tr class="border-b text-left text-xs text-gray-500">
-                            <th class="w-20 px-2 py-2 font-medium">PID</th>
-                            <th class="px-2 py-2 font-medium">进程</th>
-                            <th class="w-28 px-2 py-2 font-medium">用户</th>
-                            <th class="w-40 px-2 py-2 font-medium">分组</th>
-                            <th class="w-36 px-2 py-2 font-medium">归属</th>
-                            <th class="w-20 px-2 py-2 text-right font-medium">CPU</th>
-                            <th class="w-32 px-2 py-2 text-right font-medium">内存</th>
+                            <SortableHeader :sort="processTable" column="pid" label="PID" class="w-20 px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="command" label="进程" class="px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="user" label="用户" class="w-28 px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="group" label="分组" class="w-40 px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="owner" label="归属" class="w-36 px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="cpuPercent" label="CPU" numeric class="w-20 px-2 py-2 text-right font-medium" />
+                            <SortableHeader :sort="processTable" column="memoryBytes" label="内存" numeric class="w-32 px-2 py-2 text-right font-medium" />
                           </tr>
                         </thead>
                         <tbody>
-                          <tr v-for="process in displayedProcesses" :key="`${process.pid}-${process.command}`" class="border-b last:border-b-0">
+                          <tr v-for="process in processTable.rows" :key="`${process.pid}-${process.command}`" class="border-b last:border-b-0">
                             <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
                             <td class="truncate px-2 py-2 text-gray-900" :title="process.command || '-'">{{ process.command || '-' }}</td>
                             <td class="truncate px-2 py-2 text-gray-700" :title="process.user || '-'">{{ process.user || '-' }}</td>
@@ -240,8 +240,8 @@
                                 {{ ownerLabel(process) }}
                               </span>
                             </td>
-                            <td class="px-2 py-2 text-right text-gray-900">{{ formatPercent(process.cpuPercent) }}</td>
-                            <td class="px-2 py-2 text-right text-gray-900">
+                            <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ formatPercent(process.cpuPercent) }}</td>
+                            <td class="px-2 py-2 text-right tabular-nums text-gray-900">
                               {{ formatBytes(process.memoryBytes) }}
                               <span class="text-xs text-gray-500">({{ formatPercent(process.memoryPercent) }})</span>
                             </td>
@@ -264,6 +264,8 @@
 </template>
 
 <script setup>
+import SortableHeader from '@/components/ui/SortableHeader.vue'
+import { useTableSort } from '@/utils/tableSort'
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
@@ -818,6 +820,7 @@ onBeforeUnmount(() => {
     window.clearInterval(refreshTimer)
   }
 })
+const processTable = useTableSort(() => displayedProcesses.value, { group: row => row.groups?.[0]?.name, owner: row => ownerLabel(row) })
 </script>
 
 <style scoped>

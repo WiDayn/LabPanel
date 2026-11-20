@@ -11,6 +11,26 @@ cd "$SCRIPT_DIR"
 OUTPUT_BINARY="${OUTPUT_BINARY:-LabPanel}"
 FRONTEND_OUT_DIR="${FRONTEND_OUT_DIR:-dist}"
 
+case "$SCRIPT_DIR" in
+    */.labpanel-release.*/source)
+        git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+        overlay="$git_dir/labpanel-local.patch"
+        if [ -e "$overlay" ]; then
+            if [ ! -f "$overlay" ] || [ ! -r "$overlay" ]; then
+                echo "无法读取本地补丁: $overlay"
+                exit 1
+            fi
+            if [ -s "$overlay" ] && ! git apply --reverse --check "$overlay" 2>/dev/null; then
+                echo "在目标版本上应用本地补丁"
+                if ! git apply --3way "$overlay"; then
+                    echo "本地补丁与目标版本冲突，停止构建: $overlay"
+                    exit 1
+                fi
+            fi
+        fi
+        ;;
+esac
+
 prepend_node_tools_from_home() {
     local user_home node_bin
     user_home="${1:-}"

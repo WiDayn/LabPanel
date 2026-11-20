@@ -127,20 +127,20 @@
               暂无代理配置
             </div>
             <div v-else class="overflow-x-auto">
-              <table class="w-full border-collapse text-sm">
+              <table class="panel-table min-w-[760px] w-full border-collapse text-sm">
                 <thead>
                   <tr class="border-b text-left text-xs text-gray-500">
-                    <th class="px-2 py-2 font-medium">名称</th>
-                    <th class="px-2 py-2 font-medium">类型</th>
-                    <th class="px-2 py-2 font-medium">目标</th>
-                    <th class="px-2 py-2 font-medium">本地端口</th>
-                    <th class="px-2 py-2 font-medium">映射地址</th>
-                    <th class="px-2 py-2 font-medium">备注</th>
-                    <th class="px-2 py-2 font-medium">操作</th>
+                    <SortableHeader :sort="proxyTable" column="name" label="名称" class="px-2 py-2 font-medium" />
+                    <SortableHeader :sort="proxyTable" column="type" label="类型" class="px-2 py-2 font-medium" />
+                    <SortableHeader :sort="proxyTable" column="target" label="目标" class="px-2 py-2 font-medium" />
+                    <SortableHeader :sort="proxyTable" column="localPort" label="本地端口" numeric class="px-2 py-2 font-medium" />
+                    <SortableHeader :sort="proxyTable" column="remotePort" label="映射地址" numeric class="px-2 py-2 font-medium" />
+                    <SortableHeader :sort="proxyTable" column="comment" label="备注" class="px-2 py-2 font-medium" />
+                    <th scope="col" class="px-2 py-2 font-medium">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(proxy, index) in proxies" :key="proxy.name" class="border-b last:border-b-0">
+                  <tr v-for="proxy in proxyTable.rows" :key="proxy.name" class="border-b last:border-b-0">
                     <td class="px-2 py-2 font-medium text-gray-900">{{ proxy.name }}</td>
                     <td class="px-2 py-2 text-gray-700">{{ proxy.type }}</td>
                     <td class="px-2 py-2 text-gray-700">
@@ -156,8 +156,8 @@
                         <template v-else>手动目标</template>
                       </div>
                     </td>
-                    <td class="px-2 py-2 text-gray-700">{{ proxy.localPort }}</td>
-                    <td class="px-2 py-2 text-gray-900">
+                    <td class="px-2 py-2 text-right tabular-nums text-gray-700">{{ proxy.localPort }}</td>
+                    <td class="whitespace-nowrap px-2 py-2 text-right tabular-nums text-gray-900">
                       <span v-if="frpConfig.serverAddr">
                         {{ frpConfig.serverAddr }}:{{ proxy.remotePort }}
                       </span>
@@ -166,8 +166,8 @@
                     <td class="px-2 py-2 text-gray-600">{{ proxy.comment || '-' }}</td>
                     <td class="px-2 py-2">
                       <div class="flex gap-2">
-                        <Button variant="outline" size="sm" @click="editProxy(index)">编辑</Button>
-                        <Button variant="destructive" size="sm" @click="deleteProxy(index)">删除</Button>
+                        <Button variant="outline" size="sm" @click="editProxy(proxies.indexOf(proxy))">编辑</Button>
+                        <Button variant="destructive" size="sm" @click="deleteProxy(proxies.indexOf(proxy))">删除</Button>
                       </div>
                     </td>
                   </tr>
@@ -280,6 +280,8 @@
 </template>
 
 <script setup>
+import SortableHeader from '@/components/ui/SortableHeader.vue'
+import { useTableSort } from '@/utils/tableSort'
 import { computed, ref, onMounted } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
@@ -567,4 +569,5 @@ const checkEnvironment = async () => {
 onMounted(() => {
   checkEnvironment()
 })
+const proxyTable = useTableSort(() => proxies.value, { target: row => row.binding?.container || row.localIP })
 </script>

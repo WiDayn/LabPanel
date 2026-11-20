@@ -93,20 +93,20 @@
             </div>
 
             <div v-if="allProcesses.length" class="mt-4 overflow-x-auto">
-              <table class="w-full min-w-[920px] table-fixed border-collapse text-sm">
+              <table class="panel-table w-full min-w-[920px] table-fixed border-collapse text-sm">
                 <thead>
                   <tr class="border-b text-left text-xs text-gray-500">
-                    <th class="w-20 px-2 py-2 font-medium">GPU</th>
-                    <th class="w-20 px-2 py-2 font-medium">PID</th>
-                    <th class="px-2 py-2 font-medium">进程</th>
-                    <th class="w-28 px-2 py-2 font-medium">用户</th>
-                    <th class="w-40 px-2 py-2 font-medium">分组</th>
-                    <th class="w-36 px-2 py-2 font-medium">归属</th>
-                    <th class="w-28 px-2 py-2 text-right font-medium">显存</th>
+                    <SortableHeader :sort="processTable" column="gpu" label="GPU" class="w-20 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="pid" label="PID" class="w-20 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="processName" label="进程" class="px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="user" label="用户" class="w-28 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="group" label="分组" class="w-40 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="owner" label="归属" class="w-36 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="usedMemoryMiB" label="显存" numeric class="w-28 px-2 py-2 text-right font-medium" />
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="process in allProcesses" :key="`${process.gpuUuid}-${process.pid}-${process.processName}`" class="border-b last:border-b-0">
+                  <tr v-for="process in processTable.rows" :key="`${process.gpuUuid}-${process.pid}-${process.processName}`" class="border-b last:border-b-0">
                     <td class="px-2 py-2 text-gray-700">GPU {{ gpuIndexByUuid[process.gpuUuid] ?? '-' }}</td>
                     <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
                     <td class="truncate px-2 py-2 text-gray-900" :title="process.processName">{{ process.processName }}</td>
@@ -138,7 +138,7 @@
                         {{ ownerLabel(process) }}
                       </span>
                     </td>
-                    <td class="px-2 py-2 text-right text-gray-900">{{ process.usedMemoryMiB }} MiB</td>
+                    <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ process.usedMemoryMiB }} MiB</td>
                   </tr>
                 </tbody>
               </table>
@@ -154,6 +154,8 @@
 </template>
 
 <script setup>
+import SortableHeader from '@/components/ui/SortableHeader.vue'
+import { useTableSort } from '@/utils/tableSort'
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
@@ -507,4 +509,5 @@ onBeforeUnmount(() => {
     window.clearInterval(refreshTimer)
   }
 })
+const processTable = useTableSort(() => allProcesses.value, { gpu: row => gpuIndexByUuid.value[row.gpuUuid], group: row => row.groups?.[0]?.name, owner: row => ownerLabel(row) })
 </script>

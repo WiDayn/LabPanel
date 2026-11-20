@@ -240,19 +240,19 @@
               暂无容器
             </div>
             <div v-else class="overflow-x-auto">
-              <table class="w-full min-w-[920px] table-fixed border-collapse text-sm">
+              <table class="panel-table w-full min-w-[920px] table-fixed border-collapse text-sm">
               <thead>
                 <tr class="border-b text-left text-xs text-gray-500">
-                  <th class="w-48 px-2 py-2 font-medium">名称</th>
-                  <th class="w-36 px-2 py-2 font-medium">分组</th>
-                  <th class="w-24 px-2 py-2 font-medium">状态</th>
-                  <th class="w-36 px-2 py-2 font-medium">IPv4</th>
-                  <th class="px-2 py-2 font-medium">IPv6</th>
-                  <th class="w-44 px-2 py-2 text-right font-medium">操作</th>
+                  <SortableHeader :sort="containerTable" column="name" label="名称" class="w-48 px-2 py-2 font-medium" />
+                  <SortableHeader :sort="containerTable" column="group" label="分组" class="w-36 px-2 py-2 font-medium" />
+                  <SortableHeader :sort="containerTable" column="state" label="状态" class="w-24 px-2 py-2 font-medium" />
+                  <SortableHeader :sort="containerTable" column="ipv4" label="IPv4" class="w-36 px-2 py-2 font-medium" />
+                  <SortableHeader :sort="containerTable" column="ipv6" label="IPv6" class="px-2 py-2 font-medium" />
+                  <th scope="col" class="w-44 px-2 py-2 text-right font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(container, index) in containers" :key="index" class="border-b last:border-b-0">
+                <tr v-for="container in containerTable.rows" :key="container.name" class="border-b last:border-b-0">
                   <td class="px-2 py-2">
                     <div class="truncate font-medium text-gray-900" :title="container.name">{{ container.name }}</div>
                     <div v-if="container.storagePool" class="truncate text-xs text-gray-600" :title="container.storagePool">{{ container.storagePool }}</div>
@@ -708,6 +708,8 @@
 </template>
 
 <script setup>
+import SortableHeader from '@/components/ui/SortableHeader.vue'
+import { useTableSort } from '@/utils/tableSort'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
@@ -1652,4 +1654,5 @@ onUnmounted(() => {
   stopBackupPolling()
   stopRestorePolling()
 })
+const containerTable = useTableSort(() => containers.value, { group: row => row.groups?.[0]?.name })
 </script>

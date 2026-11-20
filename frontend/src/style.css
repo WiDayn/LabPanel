@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+.panel-table thead {
+  @apply bg-gray-50 text-left text-xs text-gray-700;
+}
+
+.panel-table tbody tr {
+  @apply hover:bg-gray-50;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

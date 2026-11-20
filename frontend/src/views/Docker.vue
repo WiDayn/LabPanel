@@ -68,19 +68,19 @@
             </div>
 
             <div class="overflow-x-auto">
-              <table class="w-full table-fixed text-sm">
-                <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+              <table class="panel-table min-w-[960px] w-full table-fixed text-sm">
+                <thead>
                   <tr>
-                    <th class="w-44 px-4 py-3">名称</th>
-                    <th class="w-48 px-4 py-3">镜像</th>
-                    <th class="w-28 px-4 py-3">状态</th>
-                    <th class="w-56 px-4 py-3">端口</th>
-                    <th class="w-56 px-4 py-3">运行信息</th>
-                    <th class="w-56 px-4 py-3 text-right">操作</th>
+                    <SortableHeader :sort="containerTable" column="name" label="名称" class="w-44 px-4 py-3" />
+                    <SortableHeader :sort="containerTable" column="image" label="镜像" class="w-48 px-4 py-3" />
+                    <SortableHeader :sort="containerTable" column="state" label="状态" class="w-28 px-4 py-3" />
+                    <SortableHeader :sort="containerTable" column="ports" label="端口" class="w-56 px-4 py-3" />
+                    <SortableHeader :sort="containerTable" column="status" label="运行信息" class="w-56 px-4 py-3" />
+                    <th scope="col" class="w-56 px-4 py-3 text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                  <tr v-for="container in containers" :key="container.id || container.name">
+                  <tr v-for="container in containerTable.rows" :key="container.id || container.name">
                     <td class="truncate px-4 py-3 font-medium text-gray-900" :title="container.name">{{ container.name }}</td>
                     <td class="truncate px-4 py-3 text-gray-700" :title="container.image">{{ container.image }}</td>
                     <td class="px-4 py-3">
@@ -133,23 +133,23 @@
             </div>
 
             <div class="overflow-x-auto">
-              <table class="w-full table-fixed text-sm">
-                <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+              <table class="panel-table min-w-[800px] w-full table-fixed text-sm">
+                <thead>
                   <tr>
-                    <th class="w-56 px-4 py-3">仓库</th>
-                    <th class="w-32 px-4 py-3">标签</th>
-                    <th class="w-44 px-4 py-3">镜像 ID</th>
-                    <th class="w-28 px-4 py-3">大小</th>
-                    <th class="w-44 px-4 py-3">创建时间</th>
-                    <th class="w-28 px-4 py-3 text-right">操作</th>
+                    <SortableHeader :sort="imageTable" column="repository" label="仓库" class="w-56 px-4 py-3" />
+                    <SortableHeader :sort="imageTable" column="tag" label="标签" class="w-32 px-4 py-3" />
+                    <SortableHeader :sort="imageTable" column="id" label="镜像 ID" class="w-44 px-4 py-3" />
+                    <SortableHeader :sort="imageTable" column="size" label="大小" numeric class="w-28 px-4 py-3" />
+                    <SortableHeader :sort="imageTable" column="createdAt" label="创建时间" class="w-44 px-4 py-3" />
+                    <th scope="col" class="w-28 px-4 py-3 text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                  <tr v-for="image in images" :key="`${image.id}-${image.repository}-${image.tag}`">
+                  <tr v-for="image in imageTable.rows" :key="`${image.id}-${image.repository}-${image.tag}`">
                     <td class="truncate px-4 py-3 font-medium text-gray-900" :title="image.repository">{{ image.repository }}</td>
                     <td class="truncate px-4 py-3 text-gray-700" :title="image.tag">{{ image.tag }}</td>
                     <td class="truncate px-4 py-3 text-gray-600" :title="image.id">{{ image.id }}</td>
-                    <td class="truncate px-4 py-3 text-gray-600">{{ image.size }}</td>
+                    <td class="truncate px-4 py-3 text-right tabular-nums text-gray-600">{{ image.size }}</td>
                     <td class="truncate px-4 py-3 text-gray-600" :title="image.createdAt">{{ image.createdAt }}</td>
                     <td class="px-4 py-3 text-right">
                       <Button variant="destructive" size="sm" @click="deleteImage(image.id)">删除</Button>
@@ -169,6 +169,8 @@
 </template>
 
 <script setup>
+import SortableHeader from '@/components/ui/SortableHeader.vue'
+import { useTableSort, sortSize } from '@/utils/tableSort'
 import { computed, onMounted, ref } from 'vue'
 import api from '@/utils/api'
 import AppHeader from '@/components/AppHeader.vue'
@@ -252,4 +254,6 @@ const deleteImage = (id) => {
 }
 
 onMounted(loadDocker)
+const containerTable = useTableSort(() => containers.value, {})
+const imageTable = useTableSort(() => images.value, { size: row => sortSize(row.size), createdAt: row => Date.parse(row.createdAt?.replace(/ [A-Z]{2,5}$/, '') || '') })
 </script>
