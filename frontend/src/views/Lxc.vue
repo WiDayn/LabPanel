@@ -239,7 +239,7 @@
             <div v-else-if="containers.length === 0" class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
               暂无容器
             </div>
-            <div v-else class="overflow-x-auto">
+            <div v-else class="panel-table-frame">
               <table class="panel-table w-full min-w-[920px] table-fixed border-collapse text-sm">
               <thead>
                 <tr class="border-b text-left text-xs text-gray-500">

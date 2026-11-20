@@ -92,7 +92,7 @@
               <span class="text-xs text-gray-500">{{ allProcesses.length }} 个</span>
             </div>
 
-            <div v-if="allProcesses.length" class="mt-4 overflow-x-auto">
+            <div v-if="allProcesses.length" class="panel-table-frame mt-4">
               <table class="panel-table w-full min-w-[920px] table-fixed border-collapse text-sm">
                 <thead>
                   <tr class="border-b text-left text-xs text-gray-500">

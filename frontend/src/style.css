@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.panel-table-frame {
+  @apply overflow-x-auto rounded-lg border border-gray-200;
+}
+
 .panel-table thead {
   @apply bg-gray-50 text-left text-xs text-gray-700;
 }

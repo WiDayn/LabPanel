@@ -130,7 +130,7 @@ go mod download
 # 构建可执行文件
 echo "编译 Go 程序..."
 GOARCH_VALUE="${GOARCH:-$(go env GOARCH)}"
-APP_VERSION="${APP_VERSION:-$(node -e "console.log(require('./frontend/package.json').version)" 2>/dev/null || echo "1.0.0")}"
+APP_VERSION="${APP_VERSION:-$(node -p "require('./frontend/package.json').version")}"
 APP_COMMIT="${APP_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo "unknown")}"
 APP_COMMIT_DATE="${APP_COMMIT_DATE:-$(git show -s --format=%cs HEAD 2>/dev/null || date +%F)}"
 CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build -mod=readonly \

@@ -126,7 +126,7 @@
             <div v-if="proxies.length === 0" class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
               暂无代理配置
             </div>
-            <div v-else class="overflow-x-auto">
+            <div v-else class="panel-table-frame">
               <table class="panel-table min-w-[760px] w-full border-collapse text-sm">
                 <thead>
                   <tr class="border-b text-left text-xs text-gray-500">

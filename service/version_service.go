@@ -7,14 +7,16 @@ import (
 	"strings"
 )
 
+const defaultAppVersion = "1.2.0"
+
 var (
-	AppVersion    = "1.0.0"
+	AppVersion    = defaultAppVersion
 	AppCommit     = "unknown"
 	AppCommitDate = "unknown"
 )
 
 func GetAppVersion() models.AppVersionResponse {
-	version := firstNonEmpty(AppVersion, "1.0.0")
+	version := firstNonEmpty(AppVersion, defaultAppVersion)
 	commit := firstNonEmpty(AppCommit, gitOutput("rev-parse", "--short=12", "HEAD"), "unknown")
 	commitDate := firstNonEmpty(AppCommitDate, gitOutput("show", "-s", "--format=%cs", "HEAD"), "unknown")
 

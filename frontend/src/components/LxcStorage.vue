@@ -176,7 +176,7 @@ const poolTable = useTableSort(() => pools.value, { location: row => row.source 
       </form>
       <p v-if="!pools.length && loading" class="text-sm text-gray-600">正在读取存储池…</p>
       <p v-else-if="!pools.length && !error" class="text-sm text-gray-600">暂无存储池</p>
-      <div v-if="pools.length" class="overflow-x-auto">
+      <div v-if="pools.length" class="panel-table-frame">
         <table class="panel-table w-full min-w-[520px] text-left text-sm">
           <thead>
             <tr><SortableHeader :sort="poolTable" column="name" label="名称" class="py-2 pr-3" /><SortableHeader :sort="poolTable" column="location" label="位置" class="py-2 pr-3" /><SortableHeader :sort="poolTable" column="availableBytes" label="可用 / 总计" numeric class="py-2 pr-3" /><SortableHeader :sort="poolTable" column="count" label="容器" numeric class="py-2 text-right" /></tr>

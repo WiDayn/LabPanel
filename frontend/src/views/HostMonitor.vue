@@ -195,7 +195,7 @@
                     >
                       <span class="h-6 w-6 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></span>
                     </div>
-                    <div v-else-if="displayedProcesses.length" :key="processViewMode" class="overflow-x-auto">
+                    <div v-else-if="displayedProcesses.length" :key="processViewMode" class="panel-table-frame">
                       <table class="panel-table w-full min-w-[980px] table-fixed border-collapse text-sm">
                         <thead>
                           <tr class="border-b text-left text-xs text-gray-500">
