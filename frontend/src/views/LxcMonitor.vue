@@ -9,62 +9,65 @@
         </div>
 
         <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:items-stretch">
-          <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div class="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <h2 class="text-base font-semibold">容器列表</h2>
-                <p class="text-xs tabular-nums text-gray-600">{{ visibleContainers.length }} / {{ containers.length }} 个</p>
+          <div class="relative min-w-0">
+            <section class="flex min-w-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm"
+              :class="{ 'lg:absolute lg:inset-x-0 lg:top-0 lg:max-h-full': currentSummary }">
+              <div class="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <h2 class="text-base font-semibold">容器列表</h2>
+                  <p class="text-xs tabular-nums text-gray-600">{{ visibleContainers.length }} / {{ containers.length }} 个</p>
+                </div>
+                <button v-if="selectedTags.size" type="button" class="min-h-7 rounded-sm text-xs font-medium text-blue-700 hover:underline focus-visible:outline focus-visible:outline-blue-500" @click="selectedTags.clear()">清除筛选</button>
               </div>
-              <button v-if="selectedTags.size" type="button" class="min-h-7 rounded-sm text-xs font-medium text-blue-700 hover:underline focus-visible:outline focus-visible:outline-blue-500" @click="selectedTags.clear()">清除筛选</button>
-            </div>
-            <div class="shrink-0 border-t border-gray-100 px-4 py-3">
-              <div class="flex max-h-40 flex-wrap items-start gap-1.5 overflow-y-auto p-1 -m-1" role="group" aria-label="容器标签筛选">
-                <ContainerTag
-                  v-for="tag in filterTags"
-                  :key="tag.id"
-                  :label="tag.label"
-                  :tone="tag.tone"
-                  :status-dot="tag.statusDot"
-                  :selected="selectedTags.has(tag.id)"
-                  selectable
-                  @toggle="toggleTag(tag.id)"
-                />
+              <div class="shrink-0 border-t border-gray-100 px-4 py-3">
+                <div class="flex max-h-40 flex-wrap items-start gap-1.5 overflow-y-auto p-1 -m-1" role="group" aria-label="容器标签筛选">
+                  <ContainerTag
+                    v-for="tag in filterTags"
+                    :key="tag.id"
+                    :label="tag.label"
+                    :tone="tag.tone"
+                    :status-dot="tag.statusDot"
+                    :selected="selectedTags.has(tag.id)"
+                    selectable
+                    @toggle="toggleTag(tag.id)"
+                  />
+                </div>
               </div>
-            </div>
-            <p v-if="groupError" class="shrink-0 border-t px-4 py-2 text-xs text-amber-800" role="status">{{ groupError }} <button type="button" class="font-medium underline" @click="loadGroups">重试</button></p>
-            <div class="max-h-[44dvh] overflow-y-auto border-t border-gray-200 lg:min-h-20 lg:max-h-none lg:flex-1 lg:[contain:size]">
-              <ul v-if="visibleContainers.length" class="divide-y divide-gray-100" aria-label="容器列表">
-                <li v-for="container in visibleContainers" :key="containerKey(container)">
-                  <button type="button" :aria-pressed="currentKey === containerKey(container)"
-                    class="block w-full px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500"
-                    :class="currentKey === containerKey(container) ? 'bg-blue-50' : 'hover:bg-gray-50'"
-                    @click="selectContainer(containerKey(container))"
-                  >
-                    <div class="min-w-0 break-all text-sm font-semibold" :class="currentKey === containerKey(container) ? 'text-blue-800' : 'text-gray-900'">{{ container.name }}</div>
-                    <div class="mt-1.5 flex flex-wrap gap-1.5">
-                      <ContainerTag
-                        v-for="tag in tagsByContainer.get(containerKey(container))"
-                        :key="tag.id"
-                        :label="tag.label"
-                        :tone="tag.tone"
-                        :status-dot="tag.statusDot"
-                      />
-                    </div>
-                    <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-gray-600">
-                      <span>CPU {{ formatPercent(container.cpuPercent) }}</span>
-                      <span>内存 {{ formatBytes(container.memoryBytes) }}</span>
-                    </div>
-                  </button>
-                </li>
-              </ul>
-              <div v-else class="px-4 py-5 text-sm text-gray-600" role="status">
-                {{ loading && !containers.length ? '正在加载容器…' : selectedTags.size ? '没有同时匹配这些标签的容器' : '暂无容器监控数据' }}
+              <p v-if="groupError" class="shrink-0 border-t px-4 py-2 text-xs text-amber-800" role="status">{{ groupError }} <button type="button" class="font-medium underline" @click="loadGroups">重试</button></p>
+              <div class="min-h-0 max-h-[44dvh] overflow-y-auto border-t border-gray-200" :class="{ 'lg:max-h-none': currentSummary }">
+                <ul v-if="visibleContainers.length" class="divide-y divide-gray-100" aria-label="容器列表">
+                  <li v-for="container in visibleContainers" :key="containerKey(container)">
+                    <button type="button" :aria-pressed="currentKey === containerKey(container)"
+                      class="block w-full px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500"
+                      :class="currentKey === containerKey(container) ? 'bg-blue-50' : 'hover:bg-gray-50'"
+                      @click="selectContainer(containerKey(container))"
+                    >
+                      <div class="min-w-0 break-all text-sm font-semibold" :class="currentKey === containerKey(container) ? 'text-blue-800' : 'text-gray-900'">{{ container.name }}</div>
+                      <div class="mt-1.5 flex flex-wrap gap-1.5">
+                        <ContainerTag
+                          v-for="tag in tagsByContainer.get(containerKey(container))"
+                          :key="tag.id"
+                          :label="tag.label"
+                          :tone="tag.tone"
+                          :status-dot="tag.statusDot"
+                        />
+                      </div>
+                      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-gray-600">
+                        <span>CPU {{ formatPercent(container.cpuPercent) }}</span>
+                        <span>内存 {{ formatBytes(container.memoryBytes) }}</span>
+                      </div>
+                    </button>
+                  </li>
+                </ul>
+                <div v-else class="px-4 py-5 text-sm text-gray-600" role="status">
+                  {{ loading && !containers.length ? '正在加载容器…' : selectedTags.size ? '没有同时匹配这些标签的容器' : '暂无容器监控数据' }}
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
 
           <div class="min-w-0">
-            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm lg:h-full">
+            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
               <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                 <div class="min-w-0">
                   <h2 class="break-all text-base font-semibold">{{ currentSummary?.name || '未选择容器' }}</h2>
