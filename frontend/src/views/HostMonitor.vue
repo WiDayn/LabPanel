@@ -201,32 +201,33 @@
                     >
                       <span class="h-6 w-6 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></span>
                     </div>
-                    <div v-else-if="displayedProcesses.length" :key="processViewMode" class="panel-table-frame">
-                      <table class="panel-table w-full min-w-[980px] table-fixed border-collapse text-sm">
+                    <div v-else-if="displayedProcesses.length" :key="processViewMode" class="panel-table-frame process-table-frame">
+                      <table class="panel-table process-table w-full table-fixed border-collapse text-sm">
                         <thead>
                           <tr class="border-b text-left text-xs text-gray-500">
-                            <SortableHeader :sort="processTable" column="pid" label="PID" class="w-20 px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="pid" label="PID" class="process-pid px-2 py-2 font-medium" />
                             <SortableHeader :sort="processTable" column="command" label="进程" class="px-2 py-2 font-medium" />
-                            <SortableHeader :sort="processTable" column="user" label="用户" class="w-28 px-2 py-2 font-medium" />
-                            <SortableHeader :sort="processTable" column="group" label="分组" class="w-40 px-2 py-2 font-medium" />
-                            <SortableHeader :sort="processTable" column="owner" label="归属" class="w-36 px-2 py-2 font-medium" />
-                            <SortableHeader :sort="processTable" column="cpuPercent" label="CPU" numeric class="w-20 px-2 py-2 text-right font-medium" />
-                            <SortableHeader :sort="processTable" column="memoryBytes" label="内存" numeric class="w-32 px-2 py-2 text-right font-medium" />
+                            <SortableHeader :sort="processTable" column="user" label="用户" class="process-user px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="group" label="分组" class="process-group px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="owner" label="归属" class="process-owner px-2 py-2 font-medium" />
+                            <SortableHeader :sort="processTable" column="cpuPercent" label="CPU" numeric class="process-cpu px-2 py-2 text-right font-medium" />
+                            <SortableHeader :sort="processTable" column="memoryBytes" label="内存" numeric class="process-memory px-2 py-2 text-right font-medium" />
                           </tr>
                         </thead>
                         <tbody>
                           <tr v-for="process in processTable.rows" :key="`${process.pid}-${process.command}`" class="border-b last:border-b-0">
-                            <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
+                            <td class="whitespace-nowrap px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
                             <td class="truncate px-2 py-2 text-gray-900" :title="process.command || '-'">{{ process.command || '-' }}</td>
                             <td class="truncate px-2 py-2 text-gray-700" :title="process.user || '-'">{{ process.user || '-' }}</td>
-                            <td class="w-40 px-2 py-2">
+                            <td class="px-2 py-2">
                               <div class="flex flex-wrap gap-1">
                                 <span
                                   v-for="group in visibleGroups(process.groups)"
                                   :key="group.id"
                                   :class="groupBadgeClass(group)"
+                                  :title="group.name"
                                 >
-                                  {{ group.name }}
+                                  <span class="truncate">{{ group.name }}</span>
                                 </span>
                                 <span
                                   v-if="hasMoreGroups(process.groups)"
@@ -238,16 +239,16 @@
                                 <span v-if="!process.groups?.length" class="text-xs text-gray-400">未分组</span>
                               </div>
                             </td>
-                            <td class="w-36 px-2 py-2">
+                            <td class="px-2 py-2">
                               <span
                                 :class="ownerBadgeClass(process)"
                                 :title="ownerLabel(process)"
                               >
-                                {{ ownerLabel(process) }}
+                                <span class="truncate">{{ ownerLabel(process) }}</span>
                               </span>
                             </td>
-                            <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ formatPercent(process.cpuPercent) }}</td>
-                            <td class="px-2 py-2 text-right tabular-nums text-gray-900">
+                            <td class="whitespace-nowrap px-2 py-2 text-right tabular-nums text-gray-900">{{ formatPercent(process.cpuPercent) }}</td>
+                            <td class="whitespace-nowrap px-2 py-2 text-right tabular-nums text-gray-900">
                               {{ formatBytes(process.memoryBytes) }}
                               <span class="text-xs text-gray-500">({{ formatPercent(process.memoryPercent) }})</span>
                             </td>

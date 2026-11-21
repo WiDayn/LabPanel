@@ -2,17 +2,20 @@ const positiveInteger = value => Number.isInteger(value) && value > 0
 const rateAvailable = value => Number.isFinite(value) && value >= 0
 const hasRates = link => rateAvailable(link.rxBytesPerSecond) || rateAvailable(link.txBytesPerSecond)
 
+function pcieSpec(generation, width) {
+  return [
+    positiveInteger(generation) ? `Gen ${generation}` : '',
+    positiveInteger(width) ? `×${width}` : '',
+  ].filter(Boolean).join(' ')
+}
+
 export function gpuInterconnects({ pcie, nvlink }) {
   const links = []
   if (pcie) {
-    const generation = positiveInteger(pcie.linkGeneration) ? `Gen ${pcie.linkGeneration}` : ''
-    const width = positiveInteger(pcie.linkWidth) ? `×${pcie.linkWidth}` : ''
-    if (generation || width || hasRates(pcie)) {
-      links.push({
-        ...pcie,
-        protocol: 'PCIe',
-        spec: generation && width ? `${generation} @ ${width}` : generation || width,
-      })
+    const spec = pcieSpec(pcie.linkGeneration, pcie.linkWidth)
+    const maxSpec = pcieSpec(pcie.maxLinkGeneration, pcie.maxLinkWidth)
+    if (spec || maxSpec || hasRates(pcie)) {
+      links.push({ ...pcie, protocol: 'PCIe', spec, maxSpec })
     }
   }
   if (nvlink && (nvlink.detected === true || positiveInteger(nvlink.activeLinks) || hasRates(nvlink))) {

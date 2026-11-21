@@ -18,6 +18,27 @@
   @apply hover:bg-gray-50;
 }
 
+.process-table-frame {
+  container: process-table / inline-size;
+}
+
+.process-table { min-width: 34rem; }
+.process-table th { white-space: nowrap; }
+.process-table .process-pid { width: 4rem; }
+.process-table .process-gpu { width: 4.25rem; }
+.process-table .process-cpu { width: 4.5rem; }
+.process-table .process-memory { width: 10rem; }
+.process-table .process-vram { width: 6.25rem; }
+.process-table .process-user { width: clamp(3.75rem, 10cqw, 7rem); }
+.process-table .process-group { width: clamp(3.75rem, 12cqw, 10rem); }
+.process-table .process-owner { width: clamp(3.75rem, 11cqw, 9rem); }
+
+@container process-table (width < 56rem) {
+  .process-table > :is(thead, tbody) > tr > :is(th, td) {
+    padding-inline: 0.5rem;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

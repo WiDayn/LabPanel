@@ -22,7 +22,7 @@
             <dd class="font-mono font-medium tabular-nums text-gray-800">{{ status.cudaSupportedVersion || 'N/A' }}</dd>
           </div>
         </dl>
-        <p v-if="preview" class="col-span-full text-xs text-gray-600">1.2.2 预览 · 模拟数据<template v-if="status.updatedAt"> · 采样于 {{ formatTime(status.updatedAt) }}</template></p>
+        <p v-if="preview" class="col-span-full text-xs text-gray-600">{{ appVersion }} 预览 · 模拟数据<template v-if="status.updatedAt"> · 采样于 {{ formatTime(status.updatedAt) }}</template></p>
       </div>
 
       <nav class="flex gap-5 border-b border-gray-200" aria-label="显卡监控视图">
@@ -120,33 +120,34 @@
               :aria-expanded="!processCollapsed" aria-controls="gpu-process-list" @click="processCollapsed = !processCollapsed">{{ processCollapsed ? '展开' : '收起' }}</button>
           </div>
           <div v-show="!processCollapsed" id="gpu-process-list" class="p-4 sm:px-5">
-            <div v-if="allProcesses.length" class="panel-table-frame">
-              <table class="panel-table w-full min-w-[790px] table-fixed border-collapse text-sm">
+            <div v-if="allProcesses.length" class="panel-table-frame process-table-frame">
+              <table class="panel-table process-table w-full table-fixed border-collapse text-sm">
                 <thead>
                   <tr class="border-b text-left text-xs text-gray-500">
-                    <SortableHeader :sort="processTable" column="gpuIndex" label="GPU" class="w-20 px-2 py-2 font-medium" />
-                    <SortableHeader :sort="processTable" column="pid" label="PID" class="w-20 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="gpuIndex" label="GPU" class="process-gpu px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="pid" label="PID" class="process-pid px-2 py-2 font-medium" />
                     <SortableHeader :sort="processTable" column="processName" label="进程" class="px-2 py-2 font-medium" />
-                    <SortableHeader :sort="processTable" column="user" label="用户" class="w-28 px-2 py-2 font-medium" />
-                    <SortableHeader :sort="processTable" column="group" label="分组" class="w-40 px-2 py-2 font-medium" />
-                    <SortableHeader :sort="processTable" column="owner" label="归属" class="w-36 px-2 py-2 font-medium" />
-                    <SortableHeader :sort="processTable" column="usedMemoryMiB" label="显存" numeric class="w-32 px-2 py-2 text-right font-medium" />
+                    <SortableHeader :sort="processTable" column="user" label="用户" class="process-user px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="group" label="分组" class="process-group px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="owner" label="归属" class="process-owner px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="usedMemoryMiB" label="显存" numeric class="process-vram px-2 py-2 text-right font-medium" />
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="process in processTable.rows" :key="`${process.gpuUuid}-${process.pid}-${process.processName}`" class="border-b last:border-b-0">
                     <td class="whitespace-nowrap px-2 py-2 tabular-nums text-gray-700">GPU {{ process.gpuIndex }}</td>
-                    <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
+                    <td class="whitespace-nowrap px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
                     <td class="truncate px-2 py-2 text-gray-900" :title="process.processName">{{ process.processName }}</td>
                     <td class="truncate px-2 py-2 text-gray-700" :title="process.user || '-'">{{ process.user || '-' }}</td>
-                    <td class="w-40 px-2 py-2">
+                    <td class="px-2 py-2">
                       <div class="flex flex-wrap gap-1">
                         <span
                           v-for="group in visibleGroups(process.groups)"
                           :key="group.id"
                           :class="groupBadgeClass(group)"
+                          :title="group.name"
                         >
-                          {{ group.name }}
+                          <span class="truncate">{{ group.name }}</span>
                         </span>
                         <span
                           v-if="hasMoreGroups(process.groups)"
@@ -158,12 +159,12 @@
                         <span v-if="!process.groups?.length" class="text-xs text-gray-400">未分组</span>
                       </div>
                     </td>
-                    <td class="w-36 px-2 py-2">
+                    <td class="px-2 py-2">
                       <span
                         :class="ownerBadgeClass(process)"
                         :title="ownerLabel(process)"
                       >
-                        {{ ownerLabel(process) }}
+                        <span class="truncate">{{ ownerLabel(process) }}</span>
                       </span>
                     </td>
                     <td class="whitespace-nowrap px-2 py-2 text-right tabular-nums text-gray-900">{{ process.usedMemoryMiB }} MiB</td>
@@ -186,6 +187,7 @@ import SortableHeader from '@/components/ui/SortableHeader.vue'
 import { useTableSort } from '@/utils/tableSort'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { version as appVersion } from '../../package.json'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
 import ContainerTag from '@/components/ui/ContainerTag.vue'

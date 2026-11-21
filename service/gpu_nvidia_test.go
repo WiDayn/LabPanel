@@ -15,7 +15,7 @@ func TestApplyNvidiaXMLPreservesUnknownAndZero(t *testing.T) {
 		<gpu><uuid>GPU-b</uuid><fan_speed>N/A</fan_speed><fb_memory_usage><used>0 MiB</used></fb_memory_usage>
 			<temperature><gpu_temp>40 C</gpu_temp><gpu_temp_max_gpu_threshold>93 C</gpu_temp_max_gpu_threshold><gpu_target_temperature>83 C</gpu_target_temperature></temperature>
 			<gpu_power_readings><average_power_draw>18.20 W</average_power_draw><instant_power_draw>N/A</instant_power_draw><current_power_limit>300.00 W</current_power_limit></gpu_power_readings>
-			<pci><pci_gpu_link_info><pcie_gen><current_link_gen>1</current_link_gen></pcie_gen><link_widths><current_link_width>16x</current_link_width></link_widths></pci_gpu_link_info><rx_util>0 KB/s</rx_util><tx_util>585 KB/s</tx_util></pci>
+			<pci><pci_gpu_link_info><pcie_gen><current_link_gen>1</current_link_gen><max_link_gen>3</max_link_gen><max_device_link_gen>4</max_device_link_gen></pcie_gen><link_widths><current_link_width>16x</current_link_width><max_link_width>16x</max_link_width></link_widths></pci_gpu_link_info><rx_util>0 KB/s</rx_util><tx_util>585 KB/s</tx_util></pci>
 		</gpu>
 		<gpu><uuid>GPU-a</uuid><fan_speed>0 %</fan_speed><power_readings><power_draw>9.5 W</power_draw><enforced_power_limit>100 W</enforced_power_limit></power_readings></gpu>
 	</nvidia_smi_log>`)
@@ -42,6 +42,10 @@ func TestApplyNvidiaXMLPreservesUnknownAndZero(t *testing.T) {
 	requireNumber(b.MemoryUsedMiB, 0)
 	if b.FanPercent != nil || b.PCIe == nil || *b.PCIe.LinkWidth != 16 || *b.PCIe.LinkGeneration != 1 {
 		t.Fatalf("wrong or missing readings: %+v", b)
+	}
+	if b.PCIe.MaxLinkGeneration == nil || *b.PCIe.MaxLinkGeneration != 3 ||
+		b.PCIe.MaxLinkWidth == nil || *b.PCIe.MaxLinkWidth != 16 {
+		t.Fatalf("unexpected maximum PCIe link: %+v", b.PCIe)
 	}
 	requireNumber(b.PCIe.RxBytesPerSecond, 0)
 	requireNumber(b.PCIe.TxBytesPerSecond, 585000)

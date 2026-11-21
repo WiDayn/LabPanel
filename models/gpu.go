@@ -34,12 +34,14 @@ type GPUDevice struct {
 }
 
 type GPULink struct {
-	Detected         bool     `json:"detected,omitempty"`
-	LinkGeneration   *int     `json:"linkGeneration,omitempty"`
-	LinkWidth        *int     `json:"linkWidth,omitempty"`
-	ActiveLinks      *int     `json:"activeLinks,omitempty"`
-	RxBytesPerSecond *float64 `json:"rxBytesPerSecond"`
-	TxBytesPerSecond *float64 `json:"txBytesPerSecond"`
+	Detected          bool     `json:"detected,omitempty"`
+	LinkGeneration    *int     `json:"linkGeneration,omitempty"`
+	LinkWidth         *int     `json:"linkWidth,omitempty"`
+	MaxLinkGeneration *int     `json:"maxLinkGeneration,omitempty"`
+	MaxLinkWidth      *int     `json:"maxLinkWidth,omitempty"`
+	ActiveLinks       *int     `json:"activeLinks,omitempty"`
+	RxBytesPerSecond  *float64 `json:"rxBytesPerSecond"`
+	TxBytesPerSecond  *float64 `json:"txBytesPerSecond"`
 }
 
 type GPUDevicePoint struct {

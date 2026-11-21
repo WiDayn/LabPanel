@@ -35,10 +35,12 @@ type nvidiaXML struct {
 			Limit string `xml:"enforced_power_limit"`
 			Ceil  string `xml:"power_limit"`
 		} `xml:"power_readings"`
-		PCIGen   string `xml:"pci>pci_gpu_link_info>pcie_gen>current_link_gen"`
-		PCIWidth string `xml:"pci>pci_gpu_link_info>link_widths>current_link_width"`
-		Rx       string `xml:"pci>rx_util"`
-		Tx       string `xml:"pci>tx_util"`
+		PCIGen      string `xml:"pci>pci_gpu_link_info>pcie_gen>current_link_gen"`
+		PCIWidth    string `xml:"pci>pci_gpu_link_info>link_widths>current_link_width"`
+		PCIMaxGen   string `xml:"pci>pci_gpu_link_info>pcie_gen>max_link_gen"`
+		PCIMaxWidth string `xml:"pci>pci_gpu_link_info>link_widths>max_link_width"`
+		Rx          string `xml:"pci>rx_util"`
+		Tx          string `xml:"pci>tx_util"`
 	} `xml:"gpu"`
 }
 
@@ -129,9 +131,11 @@ func applyNvidiaXML(response *models.GPUMonitorResponse, data []byte) error {
 		gpu.MaxPowerWatts = firstGPUReading(nil, row.Power.Limit, row.LegacyPower.Limit, row.LegacyPower.Ceil)
 		link := models.GPULink{
 			LinkGeneration: gpuPositiveInteger(row.PCIGen), LinkWidth: gpuPositiveInteger(row.PCIWidth),
+			MaxLinkGeneration: gpuPositiveInteger(row.PCIMaxGen), MaxLinkWidth: gpuPositiveInteger(row.PCIMaxWidth),
 			RxBytesPerSecond: gpuRateBytes(row.Rx), TxBytesPerSecond: gpuRateBytes(row.Tx),
 		}
-		if link.LinkGeneration != nil || link.LinkWidth != nil || link.RxBytesPerSecond != nil || link.TxBytesPerSecond != nil {
+		if link.LinkGeneration != nil || link.LinkWidth != nil || link.MaxLinkGeneration != nil ||
+			link.MaxLinkWidth != nil || link.RxBytesPerSecond != nil || link.TxBytesPerSecond != nil {
 			gpu.PCIe = &link
 		}
 	}
