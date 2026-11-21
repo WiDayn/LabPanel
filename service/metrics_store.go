@@ -199,6 +199,16 @@ func (s *MetricsStore) initSchema() error {
 			PRIMARY KEY (sample_id, owner_key),
 			FOREIGN KEY (sample_id) REFERENCES gpu_memory_samples(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS gpu_device_samples (
+			timestamp_ns INTEGER NOT NULL,
+			gpu_uuid TEXT NOT NULL,
+			used_memory_mib REAL,
+			power_watts REAL,
+			utilization REAL,
+			temperature REAL,
+			fan_percent REAL,
+			PRIMARY KEY (timestamp_ns, gpu_uuid)
+		) WITHOUT ROWID`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.Exec(statement); err != nil {
@@ -607,6 +617,7 @@ func (s *MetricsStore) PruneExpired() error {
 			`DELETE FROM host_metric_points WHERE timestamp_ns < ?`,
 			`DELETE FROM lxc_metric_points WHERE timestamp_ns < ?`,
 			`DELETE FROM gpu_memory_samples WHERE timestamp_ns < ?`,
+			`DELETE FROM gpu_device_samples WHERE timestamp_ns < ?`,
 			`DELETE FROM host_metric_raw_state WHERE timestamp_ns < ?`,
 			`DELETE FROM lxc_metric_raw_state WHERE timestamp_ns < ?`,
 		}

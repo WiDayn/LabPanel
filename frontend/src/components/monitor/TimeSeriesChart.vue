@@ -2,24 +2,26 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { init, use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
-use([LineChart, DataZoomComponent, GridComponent, TooltipComponent, CanvasRenderer])
+use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps({
   label: { type: String, required: true },
   series: { type: Array, required: true },
   range: { type: String, required: true },
   formatValue: { type: Function, required: true },
-  minimumMax: { type: Number, default: 0 },
+  yAxisMax: Number,
+  yAxisInterval: Number,
+  referenceLines: { type: Array, default: () => [] },
   emptyText: { type: String, default: '等待采样数据' },
 })
 
 const plot = ref(null)
 const zoomWindow = ref(null)
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
-const dataSeries = computed(() => props.series.map(({ id, name, color, points, valueKey }) => {
+const dataSeries = computed(() => props.series.map(({ id, name, color, points, valueKey, lineType }) => {
   const samples = new Map()
   for (const point of points) {
     const time = point.timestamp ? new Date(point.timestamp).getTime() : NaN
@@ -30,7 +32,7 @@ const dataSeries = computed(() => props.series.map(({ id, name, color, points, v
   }
   const data = [...samples].sort(([a], [b]) => a - b)
   const count = data.filter(([, value]) => value !== null).length
-  return { id, name, color, data, count }
+  return { id, name, color, data, count, lineType }
 }))
 const hasData = computed(() => dataSeries.value.some(({ count }) => count > 0))
 const timeExtent = computed(() => {
@@ -93,6 +95,8 @@ function updateChart() {
     chart = init(plot.value, null, { renderer: 'canvas' })
     chart.on('datazoom', rememberZoom)
   }
+  const referenceSeries = props.referenceLines.length ? dataSeries.value.findIndex(series => series.count > 0) : -1
+  const referenceMax = props.referenceLines.length ? Math.max(...props.referenceLines) : null
   chart.setOption({
     animationDuration: 0,
     animationDurationUpdate: reducedMotion.matches ? 0 : 200,
@@ -110,21 +114,27 @@ function updateChart() {
     },
     yAxis: {
       type: 'value', splitNumber: 4,
-      max: props.minimumMax > 0 ? ({ max }) => Math.max(props.minimumMax, max) : null,
-      axisLabel: { color: '#475569', fontSize: 11, formatter: formatValue, hideOverlap: true },
+      interval: props.yAxisInterval,
+      max: props.yAxisMax ?? (referenceMax === null ? null : ({ max }) => Math.max(max, referenceMax)),
+      axisLabel: { color: '#475569', fontSize: 11, formatter: formatValue, hideOverlap: true, showMaxLabel: props.yAxisMax !== undefined || undefined },
       splitLine: { lineStyle: { color: '#e8edf4' } },
     },
     dataZoom: zoomOptions(),
-    series: dataSeries.value.map(({ id, name, color, data, count }) => ({
+    series: dataSeries.value.map(({ id, name, color, data, count, lineType }, index) => ({
       id, name, type: 'line', data, encode: { x: 0, y: 1, tooltip: [1] },
       connectNulls: false, showSymbol: count === 1, symbol: 'circle', symbolSize: 5,
-      lineStyle: { width: 2, color }, itemStyle: { color },
+      lineStyle: { width: 2, color, type: lineType || 'solid' }, itemStyle: { color },
+      markLine: index === referenceSeries ? {
+        silent: true, symbol: 'none', label: { show: false },
+        lineStyle: { type: 'dashed', color: '#b45309', width: 1.5 },
+        data: props.referenceLines.map(value => ({ yAxis: value })),
+      } : { data: [] },
     })),
   }, { replaceMerge: ['series'] })
 }
 
 watch(() => props.range, () => { zoomWindow.value = null }, { flush: 'sync' })
-watch([dataSeries, () => props.range, () => props.minimumMax], updateChart, { flush: 'post' })
+watch([dataSeries, () => props.range, () => props.yAxisMax, () => props.yAxisInterval, () => props.referenceLines], updateChart, { flush: 'post' })
 
 onMounted(() => {
   observer = new ResizeObserver(() => {

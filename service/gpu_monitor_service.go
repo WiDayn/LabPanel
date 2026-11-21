@@ -2,12 +2,14 @@ package service
 
 import (
 	"LabPanel/models"
+	"context"
 	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	osuser "os/user"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,17 +18,21 @@ import (
 )
 
 const (
-	gpuSampleInterval = time.Minute
+	gpuSampleInterval = 5 * time.Second
+	gpuCollectTimeout = 4 * time.Second
 	gpuRetention      = 30 * 24 * time.Hour
 	gpuMaxPoints      = 240
 )
 
 type GPUMonitorService struct {
-	mu        sync.RWMutex
-	history   map[string][]gpuMemorySample
-	lastSweep time.Time
-	started   bool
-	collectMu sync.Mutex
+	mu             sync.RWMutex
+	history        map[string][]gpuMemorySample
+	snapshot       models.GPUMonitorResponse
+	started        bool
+	collectMu      sync.Mutex
+	topologyProbe  gpuTopologyProbe
+	telemetryMu    sync.Mutex
+	telemetryCache map[string]gpuTelemetryCache
 }
 
 type gpuMemorySample struct {
@@ -45,7 +51,8 @@ var defaultGPUMonitorService = NewGPUMonitorService()
 
 func NewGPUMonitorService() *GPUMonitorService {
 	return &GPUMonitorService{
-		history: make(map[string][]gpuMemorySample),
+		history:        make(map[string][]gpuMemorySample),
+		telemetryCache: make(map[string]gpuTelemetryCache),
 	}
 }
 
@@ -65,9 +72,9 @@ func (s *GPUMonitorService) Start() {
 	s.restoreFromStore()
 
 	go func() {
-		s.Collect()
 		ticker := time.NewTicker(gpuSampleInterval)
 		defer ticker.Stop()
+		s.collect(true)
 		for range ticker.C {
 			s.Collect()
 		}
@@ -75,41 +82,69 @@ func (s *GPUMonitorService) Start() {
 }
 
 func (s *GPUMonitorService) Response(rangeKey string) models.GPUMonitorResponse {
-	s.collectIfStale()
+	s.mu.RLock()
+	ready := !s.snapshot.UpdatedAt.IsZero()
+	s.mu.RUnlock()
+	if !ready {
+		s.collect(true)
+	}
 
-	if rangeKey == "" {
+	switch rangeKey {
+	case "1h", "24h", "7d", "30d":
+	default:
 		rangeKey = "1h"
 	}
 	window := gpuRangeDuration(rangeKey)
 	since := time.Now().Add(-window)
-	response := collectGPUStatus(time.Now())
+	s.mu.RLock()
+	response := s.snapshot
 	response.Range = rangeKey
 	response.IntervalSeconds = int(gpuSampleInterval.Seconds())
 	if !response.Available {
+		s.mu.RUnlock()
 		return response
 	}
 
-	s.mu.RLock()
+	response.GPUs = slices.Clone(response.GPUs)
 	for i := range response.GPUs {
 		response.GPUs[i].MemorySeries = s.memorySeries(response.GPUs[i].UUID, since)
 	}
 	s.mu.RUnlock()
+	s.addDeviceTelemetry(&response, since, window)
 
 	return response
 }
 
 func (s *GPUMonitorService) Collect() {
-	if !s.collectMu.TryLock() {
-		return
-	}
+	s.collect(false)
+}
+
+func (s *GPUMonitorService) collect(onlyIfMissing bool) {
+	s.collectMu.Lock()
 	defer s.collectMu.Unlock()
+	if onlyIfMissing {
+		s.mu.RLock()
+		ready := !s.snapshot.UpdatedAt.IsZero()
+		s.mu.RUnlock()
+		if ready {
+			return
+		}
+	}
 
 	now := time.Now()
-	status := collectGPUStatus(now)
+	ctx, cancel := context.WithTimeout(context.Background(), gpuCollectTimeout)
+	defer cancel()
+	status, processesOK := collectGPUStatus(ctx, now)
+	if status.Available {
+		s.topologyProbe.sample(ctx, &status)
+		if store := GetMetricsStore(); store != nil {
+			_ = store.insertGPUDeviceSamples(now, status.GPUs)
+		}
+	}
 
 	s.mu.Lock()
-	s.lastSweep = now
-	if status.Available {
+	s.snapshot = status
+	if status.Available && processesOK {
 		seen := make(map[string]struct{}, len(status.GPUs))
 		for _, gpu := range status.GPUs {
 			seen[gpu.UUID] = struct{}{}
@@ -155,15 +190,6 @@ func (s *GPUMonitorService) restoreFromStore() {
 
 	s.mu.Lock()
 	s.history = history
-	for _, samples := range history {
-		if len(samples) == 0 {
-			continue
-		}
-		latest := samples[len(samples)-1].Timestamp
-		if latest.After(s.lastSweep) {
-			s.lastSweep = latest
-		}
-	}
 	s.mu.Unlock()
 }
 
@@ -184,16 +210,6 @@ func sameGPUMemorySample(a, b gpuMemorySample) bool {
 		}
 	}
 	return true
-}
-
-func (s *GPUMonitorService) collectIfStale() {
-	s.mu.RLock()
-	lastSweep := s.lastSweep
-	s.mu.RUnlock()
-
-	if time.Since(lastSweep) >= gpuSampleInterval/2 {
-		s.Collect()
-	}
 }
 
 func (s *GPUMonitorService) memorySeries(gpuUUID string, since time.Time) []models.GPUOwnerMemorySeries {
@@ -287,24 +303,24 @@ func (s *GPUMonitorService) memorySeries(gpuUUID string, since time.Time) []mode
 	return series
 }
 
-func collectGPUStatus(now time.Time) models.GPUMonitorResponse {
+func collectGPUStatus(ctx context.Context, now time.Time) (models.GPUMonitorResponse, bool) {
 	if _, err := exec.LookPath("nvidia-smi"); err != nil {
 		return models.GPUMonitorResponse{
 			Available: false,
 			Message:   "未找到 nvidia-smi，当前宿主机未安装 NVIDIA 驱动或没有 NVIDIA 显卡",
 			UpdatedAt: now,
 			GPUs:      []models.GPUDevice{},
-		}
+		}, false
 	}
 
-	gpus, err := queryGPUDevices()
+	gpus, err := queryGPUDevices(ctx)
 	if err != nil {
 		return models.GPUMonitorResponse{
 			Available: false,
 			Message:   fmt.Sprintf("nvidia-smi 无显卡或不可用: %v", err),
 			UpdatedAt: now,
 			GPUs:      []models.GPUDevice{},
-		}
+		}, false
 	}
 	if len(gpus) == 0 {
 		return models.GPUMonitorResponse{
@@ -312,10 +328,10 @@ func collectGPUStatus(now time.Time) models.GPUMonitorResponse {
 			Message:   "nvidia-smi 未检测到可用显卡",
 			UpdatedAt: now,
 			GPUs:      []models.GPUDevice{},
-		}
+		}, false
 	}
 
-	processes := queryGPUProcesses()
+	processes, processErr := queryGPUProcesses(ctx)
 	byUUID := make(map[string][]models.GPUProcess, len(gpus))
 	for _, process := range processes {
 		byUUID[process.GPUUUID] = append(byUUID[process.GPUUUID], process)
@@ -327,16 +343,20 @@ func collectGPUStatus(now time.Time) models.GPUMonitorResponse {
 		}
 	}
 
-	return models.GPUMonitorResponse{
+	response := models.GPUMonitorResponse{
 		Available: true,
 		Message:   "nvidia-smi 已就绪",
 		UpdatedAt: now,
 		GPUs:      gpus,
 	}
+	if report, err := nvidiaQuery(ctx, "-q", "-x"); err == nil {
+		_ = applyNvidiaXML(&response, report)
+	}
+	return response, processErr == nil
 }
 
-func queryGPUDevices() ([]models.GPUDevice, error) {
-	output, err := exec.Command(
+func queryGPUDevices(ctx context.Context) ([]models.GPUDevice, error) {
+	output, err := exec.CommandContext(ctx,
 		"nvidia-smi",
 		"--query-gpu=index,uuid,name,memory.total,memory.used,utilization.gpu,temperature.gpu",
 		"--format=csv,noheader,nounits",
@@ -356,10 +376,10 @@ func queryGPUDevices() ([]models.GPUDevice, error) {
 			Index:          atoiDefault(fields[0], -1),
 			UUID:           fields[1],
 			Name:           fields[2],
-			MemoryTotalMiB: int64(atoiDefault(fields[3], 0)),
-			MemoryUsedMiB:  int64(atoiDefault(fields[4], 0)),
-			Utilization:    atoiDefault(fields[5], 0),
-			Temperature:    atoiDefault(fields[6], 0),
+			MemoryTotalMiB: gpuNumber(fields[3]),
+			MemoryUsedMiB:  gpuNumber(fields[4]),
+			Utilization:    gpuNumber(fields[5]),
+			Temperature:    gpuNumber(fields[6]),
 			Processes:      []models.GPUProcess{},
 			MemorySeries:   []models.GPUOwnerMemorySeries{},
 		})
@@ -367,14 +387,14 @@ func queryGPUDevices() ([]models.GPUDevice, error) {
 	return gpus, nil
 }
 
-func queryGPUProcesses() []models.GPUProcess {
-	output, err := exec.Command(
+func queryGPUProcesses(ctx context.Context) ([]models.GPUProcess, error) {
+	output, err := exec.CommandContext(ctx,
 		"nvidia-smi",
 		"--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
 		"--format=csv,noheader,nounits",
 	).CombinedOutput()
 	if err != nil {
-		return []models.GPUProcess{}
+		return nil, err
 	}
 
 	lines := nonEmptyLines(string(output))
@@ -405,7 +425,7 @@ func queryGPUProcesses() []models.GPUProcess {
 			Groups:        groups,
 		})
 	}
-	return processes
+	return processes, nil
 }
 
 func ownerMemoryByProcess(processes []models.GPUProcess) map[string]gpuOwnerMemory {

@@ -2,129 +2,140 @@
   <div class="min-h-screen bg-gray-50">
     <AppHeader />
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div class="space-y-6">
-        <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {{ error }}
+    <main class="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h2 class="text-xl font-semibold text-gray-900">显卡监控</h2>
+          <span v-if="status.available" class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-xs text-gray-600">nvidia-smi</span>
         </div>
-
-        <Card v-if="!status.available" class="p-6 border-amber-200 bg-amber-50">
-          <h2 class="text-base font-semibold text-amber-900">nvidia-smi 无显卡</h2>
-          <p class="mt-1 text-sm text-amber-800">{{ status.message || '当前宿主机未检测到可用 NVIDIA 显卡。' }}</p>
-        </Card>
-
-        <section v-else class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 class="text-base font-semibold text-gray-900">nvidia-smi</h2>
-              <div class="mt-1 text-sm text-gray-600">刷新时间: {{ formatTime(status.updatedAt) }}</div>
-            </div>
-            <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-end">
-              <div class="flex rounded-md border border-gray-300 bg-white p-1">
-                <button
-                  v-for="option in rangeOptions"
-                  :key="option.value"
-                  type="button"
-                  class="h-7 min-w-12 rounded px-3 text-xs font-medium transition-colors"
-                  :class="rangeKey === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                  @click="setRange(option.value)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
-              <Button variant="outline" size="sm" @click="loadGpuStatus" :disabled="loading">
-                {{ loading ? '刷新中...' : '刷新' }}
-              </Button>
-            </div>
+        <Button variant="outline" size="sm" :disabled="loading" @click="loadGpuStatus">
+          {{ loading ? '刷新中…' : '刷新' }}
+        </Button>
+        <dl v-if="status.driverVersion || status.cudaSupportedVersion" aria-label="GPU 软件版本"
+          class="col-span-full flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+          <div class="flex items-baseline gap-1.5">
+            <dt class="whitespace-nowrap">NVIDIA 驱动</dt>
+            <dd class="font-mono font-medium tabular-nums text-gray-800">{{ status.driverVersion || 'N/A' }}</dd>
           </div>
+          <div class="flex items-baseline gap-1.5">
+            <dt class="whitespace-nowrap">CUDA 支持上限</dt>
+            <dd class="font-mono font-medium tabular-nums text-gray-800">{{ status.cudaSupportedVersion || 'N/A' }}</dd>
+          </div>
+        </dl>
+        <p v-if="preview" class="col-span-full text-xs text-gray-600">1.2.2 预览 · 模拟数据<template v-if="status.updatedAt"> · 采样于 {{ formatTime(status.updatedAt) }}</template></p>
+      </div>
 
-          <div class="border-t border-gray-200 p-4">
-            <div class="grid gap-4 xl:grid-cols-2">
-              <div
-                v-for="{ gpu, series } in gpuCharts"
-                :key="gpu.uuid"
-                class="min-w-0 rounded-md border border-gray-200 bg-white p-4 shadow-sm"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="text-sm font-semibold text-gray-900">GPU {{ gpu.index }}</div>
-                    <div class="mt-1 truncate text-sm text-gray-700" :title="gpu.name">{{ gpu.name }}</div>
-                    <div class="mt-1 truncate text-xs text-gray-500" :title="gpu.uuid">{{ gpu.uuid }}</div>
-                  </div>
-                  <span class="rounded bg-green-100 px-2 py-1 text-xs text-green-700">
-                    {{ gpu.processes?.length || 0 }} 进程
-                  </span>
-                </div>
+      <nav class="flex gap-5 border-b border-gray-200" aria-label="显卡监控视图">
+        <RouterLink v-for="tab in monitorTabs" :key="tab.id" :to="tabLocation(tab.id)" custom v-slot="{ href, navigate }">
+          <a :href="href" :aria-current="activeTab === tab.id ? 'page' : undefined" @click="navigate"
+            class="-mb-px inline-flex h-9 items-center border-b-2 px-1 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            :class="activeTab === tab.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-900'">
+            {{ tab.label }}
+          </a>
+        </RouterLink>
+      </nav>
 
-                <div class="mt-4 space-y-3">
-                  <div>
-                    <div class="flex justify-between text-xs text-gray-600">
-                      <span>显存</span>
-                      <span>{{ gpu.memoryUsedMiB }} / {{ gpu.memoryTotalMiB }} MiB</span>
-                    </div>
-                    <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
-                      <div class="h-full rounded-full bg-blue-600" :style="{ width: `${memoryPercent(gpu)}%` }" />
-                    </div>
-                  </div>
-                  <div class="grid grid-cols-2 gap-3 text-xs text-gray-600">
-                    <div>
-                      <div class="font-medium text-gray-900">{{ gpu.utilization }}%</div>
-                      <div>GPU 利用率</div>
-                    </div>
-                    <div>
-                      <div class="font-medium text-gray-900">{{ gpu.temperature }}°C</div>
-                      <div>温度</div>
-                    </div>
-                  </div>
-                  <div>
-                    <div class="flex items-center justify-between gap-3 text-xs">
-                      <div class="font-medium text-gray-700">容器显存占用</div>
-                      <div class="text-gray-500">{{ series.length }} 条曲线</div>
-                    </div>
-                    <TimeSeriesChart
-                      class="mt-2"
-                      :label="`GPU ${gpu.index} 容器显存占用`"
-                      :series="series"
-                      :minimum-max="gpu.memoryTotalMiB"
-                      :format-value="formatMemory"
-                      :range="rangeKey"
-                      empty-text="等待显存采样数据"
-                    />
-                    <div v-if="series.length" class="mt-3 flex flex-wrap gap-3">
-                      <div v-for="item in series" :key="item.id" class="flex min-w-0 items-center gap-2 text-xs text-gray-600">
-                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: item.color }" />
-                        <span class="min-w-0 break-all font-medium text-gray-800">{{ item.name }}</span>
-                        <span class="shrink-0 tabular-nums">{{ item.latest }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+      <div v-if="error" role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
+      <div v-if="!loaded && loading" role="status" class="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500">正在加载显卡数据…</div>
+      <div v-else-if="loaded && !gpuList.length" class="rounded-lg border border-gray-200 bg-white p-6">
+        <h3 class="text-base font-semibold text-gray-900">未检测到可用显卡</h3>
+        <p class="mt-1 text-sm text-gray-600">{{ status.message || '当前宿主机没有可用的 NVIDIA 显卡。' }}</p>
+      </div>
+
+      <template v-else-if="gpuList.length">
+        <GpuInterconnectPanel v-show="activeTab === 'interconnect'" :gpus="gpuList" :topology="status.topology" />
+        <GpuStatusTable v-show="activeTab === 'monitor'" :gpus="gpuList" :selected-uuid="selectedUuid" @select="toggleGpu" />
+
+        <section v-show="activeTab === 'monitor'" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-5">
+            <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+              <h3 class="text-sm font-semibold text-gray-900">趋势</h3>
+              <div class="inline-flex flex-wrap gap-0.5 rounded-md bg-gray-100 p-0.5" role="group" aria-label="趋势指标">
+                <button v-for="metric in availableTrendMetrics" :key="metric.id" type="button"
+                  class="h-7 whitespace-nowrap rounded px-2.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  :class="metricKey === metric.id ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'"
+                  :aria-pressed="metricKey === metric.id" @click="metricKey = metric.id">{{ metric.label }}</button>
               </div>
             </div>
+            <div class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white p-1" role="group" aria-label="趋势时间范围">
+              <button v-for="option in rangeOptions" :key="option.value" type="button"
+                :aria-pressed="rangeKey === option.value"
+                class="h-7 min-w-11 rounded px-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                :class="rangeKey === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                @click="setRange(option.value)">{{ option.label }}</button>
+            </div>
           </div>
+          <div class="p-4 sm:px-5">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="趋势 GPU 筛选">
+                <ContainerTag v-for="gpu in gpuList" :key="gpu.uuid" :label="`GPU ${gpu.index}`"
+                  :tone="gpu.uuid === selectedUuid ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-gray-50 text-gray-700'"
+                  class="min-w-16 justify-center"
+                  :selectable="true" :selected="gpu.uuid === selectedUuid" @toggle="toggleGpu(gpu.uuid)" />
+              </div>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                <template v-if="selectedGpu">
+                  <span>{{ selectedGpu.name }}</span>
+                  <details :key="selectedUuid">
+                    <summary class="cursor-pointer text-gray-600 hover:text-blue-700">UUID</summary>
+                    <code class="mt-1 block break-all font-mono">{{ selectedGpu.uuid }}</code>
+                  </details>
+                </template>
+                <span v-else>全部 GPU</span>
+              </div>
+            </div>
+            <TimeSeriesChart :key="trendKey" :label="trendLabel"
+              :series="visibleSeries" :y-axis-max="trendAxisMax" :y-axis-interval="trendAxisMax ? trendAxisMax / 4 : undefined"
+              :format-value="activeMetric.format" :reference-lines="temperatureReferenceLines"
+              :range="rangeKey" :empty-text="emptyTrend" />
+            <div v-if="temperatureTargets.length" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600" role="group" aria-label="温控目标">
+              <span class="font-medium text-gray-700">温控目标</span>
+              <span v-for="target in temperatureTargets" :key="target.value" class="inline-flex items-center gap-1.5">
+                <span class="w-3 border-t-2 border-dashed border-amber-700" aria-hidden="true" />
+                <span class="tabular-nums">{{ formatGpuTemperature(target.value) }}</span>
+                <span v-if="!selectedGpu">· GPU {{ target.indices.join('、') }}</span>
+              </span>
+            </div>
+            <div v-if="series.length" class="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="趋势曲线">
+              <button v-for="item in series" :key="item.id" type="button"
+                class="flex min-w-0 items-center gap-1.5 rounded border px-2 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                :class="isSeriesHidden(item.id) ? 'border-transparent text-gray-500 line-through' : 'border-gray-200 text-gray-700 hover:bg-gray-50'"
+                :aria-pressed="!isSeriesHidden(item.id)" @click="toggleSeries(item.id)">
+                <span v-if="item.lineType === 'dashed'" class="w-3 shrink-0 border-t-2 border-dashed" :style="{ borderColor: item.color }" aria-hidden="true" />
+                <span v-else class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: item.color }" aria-hidden="true" />
+                <span class="break-all font-medium">{{ item.name }}</span>
+                <span class="shrink-0 tabular-nums">{{ item.latest }}</span>
+              </button>
+            </div>
+          </div>
+        </section>
 
-          <div class="border-t border-gray-200 p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="text-base font-semibold text-gray-900">显卡进程</h2>
+        <section v-show="activeTab === 'monitor'" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-5">
+            <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <h3 class="text-sm font-semibold text-gray-900">显卡进程</h3>
               <span class="text-xs text-gray-500">{{ allProcesses.length }} 个</span>
             </div>
-
-            <div v-if="allProcesses.length" class="panel-table-frame mt-4">
-              <table class="panel-table w-full min-w-[920px] table-fixed border-collapse text-sm">
+            <button type="button" class="h-8 rounded-md border border-gray-300 bg-white px-2.5 text-xs text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              :aria-expanded="!processCollapsed" aria-controls="gpu-process-list" @click="processCollapsed = !processCollapsed">{{ processCollapsed ? '展开' : '收起' }}</button>
+          </div>
+          <div v-show="!processCollapsed" id="gpu-process-list" class="p-4 sm:px-5">
+            <div v-if="allProcesses.length" class="panel-table-frame">
+              <table class="panel-table w-full min-w-[790px] table-fixed border-collapse text-sm">
                 <thead>
                   <tr class="border-b text-left text-xs text-gray-500">
-                    <SortableHeader :sort="processTable" column="gpu" label="GPU" class="w-20 px-2 py-2 font-medium" />
+                    <SortableHeader :sort="processTable" column="gpuIndex" label="GPU" class="w-20 px-2 py-2 font-medium" />
                     <SortableHeader :sort="processTable" column="pid" label="PID" class="w-20 px-2 py-2 font-medium" />
                     <SortableHeader :sort="processTable" column="processName" label="进程" class="px-2 py-2 font-medium" />
                     <SortableHeader :sort="processTable" column="user" label="用户" class="w-28 px-2 py-2 font-medium" />
                     <SortableHeader :sort="processTable" column="group" label="分组" class="w-40 px-2 py-2 font-medium" />
                     <SortableHeader :sort="processTable" column="owner" label="归属" class="w-36 px-2 py-2 font-medium" />
-                    <SortableHeader :sort="processTable" column="usedMemoryMiB" label="显存" numeric class="w-28 px-2 py-2 text-right font-medium" />
+                    <SortableHeader :sort="processTable" column="usedMemoryMiB" label="显存" numeric class="w-32 px-2 py-2 text-right font-medium" />
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="process in processTable.rows" :key="`${process.gpuUuid}-${process.pid}-${process.processName}`" class="border-b last:border-b-0">
-                    <td class="px-2 py-2 text-gray-700">GPU {{ gpuIndexByUuid[process.gpuUuid] ?? '-' }}</td>
+                    <td class="whitespace-nowrap px-2 py-2 tabular-nums text-gray-700">GPU {{ process.gpuIndex }}</td>
                     <td class="px-2 py-2 font-mono text-xs text-gray-700">{{ process.pid }}</td>
                     <td class="truncate px-2 py-2 text-gray-900" :title="process.processName">{{ process.processName }}</td>
                     <td class="truncate px-2 py-2 text-gray-700" :title="process.user || '-'">{{ process.user || '-' }}</td>
@@ -155,17 +166,17 @@
                         {{ ownerLabel(process) }}
                       </span>
                     </td>
-                    <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ process.usedMemoryMiB }} MiB</td>
+                    <td class="whitespace-nowrap px-2 py-2 text-right tabular-nums text-gray-900">{{ process.usedMemoryMiB }} MiB</td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div v-else class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-              当前没有进程占用 NVIDIA 显卡。
+            <div v-else class="py-3 text-sm text-gray-600">
+              当前没有进程占用 GPU。
             </div>
           </div>
         </section>
-      </div>
+      </template>
     </main>
   </div>
 </template>
@@ -173,16 +184,27 @@
 <script setup>
 import SortableHeader from '@/components/ui/SortableHeader.vue'
 import { useTableSort } from '@/utils/tableSort'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '@/utils/api'
 import Button from '@/components/ui/Button.vue'
-import Card from '@/components/ui/Card.vue'
+import ContainerTag from '@/components/ui/ContainerTag.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import GpuStatusTable from '@/components/monitor/GpuStatusTable.vue'
+import GpuInterconnectPanel from '@/components/monitor/GpuInterconnectPanel.vue'
 import TimeSeriesChart from '@/components/monitor/TimeSeriesChart.vue'
+import { formatGpuCapacity as formatCapacity, formatGpuTemperature, readFanPercent, gpuTrendMetrics, gpuTrendLimit, gpuTrendColor, gpuTotalPoints } from '@/utils/gpuTrends'
 
 const totalSeriesColor = '#111827'
 const hostSeriesColor = '#6b7280'
-const formatMemory = value => `${value.toFixed(0)} MiB`
+const preview = import.meta.env.MODE === 'gpu-preview'
+const route = useRoute()
+const monitorTabs = [
+  { id: 'monitor', label: '监控' },
+  { id: 'interconnect', label: '互连' },
+]
+const activeTab = computed(() => route.query.tab === 'interconnect' ? 'interconnect' : 'monitor')
+const tabLocation = tab => ({ query: { ...route.query, tab: tab === 'monitor' ? undefined : tab } })
 const ownerChartColorVariants = {
   blue: ['#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8'],
   emerald: ['#34d399', '#10b981', '#059669', '#047857'],
@@ -211,8 +233,9 @@ function memoryChartSeries(gpu) {
     }
     const latest = points?.at(-1)?.usedMemoryMiB
     return {
-      id: `${ownerType}:${containerName || label}`, name: label, color, points: points || [], valueKey: 'usedMemoryMiB',
-      latest: Number.isFinite(latest) ? formatMemory(latest) : '-',
+      id: `${ownerType}:${containerName || label}`, name: ownerType === 'total' ? '进程合计' : label,
+      color, points: points || [], valueKey: 'usedMemoryMiB',
+      latest: Number.isFinite(latest) ? formatCapacity(latest) : '-',
     }
   })
 }
@@ -226,7 +249,96 @@ const status = ref({
   updatedAt: '',
   gpus: [],
 })
-const gpuCharts = computed(() => (status.value.gpus || []).map(gpu => ({ gpu, series: memoryChartSeries(gpu) })))
+const loaded = ref(false)
+const selectedUuid = ref('')
+const metricKey = ref('memory')
+const processCollapsed = ref(false)
+const hiddenByView = ref(new Map())
+const gpuList = computed(() => status.value.available ? status.value.gpus || [] : [])
+const selectedGpu = computed(() => gpuList.value.find(gpu => gpu.uuid === selectedUuid.value))
+const hasFanHistory = gpu => gpu.telemetry?.some(point => readFanPercent(point.fanPercent) !== null)
+const showFanStatus = computed(() => gpuList.value.some(gpu => readFanPercent(gpu.fanPercent) !== null))
+const availableTrendMetrics = computed(() => showFanStatus.value || gpuList.value.some(hasFanHistory)
+  ? gpuTrendMetrics : gpuTrendMetrics.filter(metric => metric.id !== 'fan'))
+watch(availableTrendMetrics, metrics => {
+  if (!metrics.some(metric => metric.id === metricKey.value)) metricKey.value = 'memory'
+})
+watch(gpuList, gpus => {
+  if (selectedUuid.value && !gpus.some(gpu => gpu.uuid === selectedUuid.value)) selectedUuid.value = ''
+})
+function toggleGpu(uuid) {
+  selectedUuid.value = selectedUuid.value === uuid ? '' : uuid
+}
+
+const activeMetric = computed(() => gpuTrendMetrics.find(metric => metric.id === metricKey.value))
+const scopeGpus = computed(() => selectedGpu.value ? [selectedGpu.value] : gpuList.value)
+const useMemoryOwners = computed(() => metricKey.value === 'memory' &&
+  Boolean(selectedGpu.value?.memorySeries?.some(({ points }) => points?.some(point => Number.isFinite(point.usedMemoryMiB)))))
+const trendKey = computed(() => `${metricKey.value}:${selectedUuid.value}:${Boolean(useMemoryOwners.value)}`)
+const trendLabel = computed(() => `${selectedGpu.value ? 'GPU ' + selectedGpu.value.index : '全部 GPU'} ${activeMetric.value.label}趋势`)
+const series = computed(() => {
+  const metric = activeMetric.value
+  if (useMemoryOwners.value) return memoryChartSeries(selectedGpu.value)
+
+  const isFan = metric.id === 'fan'
+  const gpus = isFan ? scopeGpus.value.filter(hasFanHistory) : scopeGpus.value
+  const devices = gpus.map(gpu => ({
+    id: gpu.uuid, name: `GPU ${gpu.index}`, color: gpuTrendColor(gpu.index),
+    points: isFan ? gpu.telemetry.map(point => ({ ...point, fanPercent: readFanPercent(point.fanPercent) })) : gpu.telemetry || [],
+    valueKey: metric.valueKey,
+  }))
+  if (metric.sum && devices.length > 1) {
+    devices.unshift({
+      id: 'total', name: '合计', color: totalSeriesColor, lineType: 'dashed', valueKey: metric.valueKey,
+      points: gpuTotalPoints(devices, metric.valueKey),
+    })
+  }
+  return devices.map(item => {
+    const value = item.points.at(-1)?.[metric.valueKey]
+    return { ...item, latest: Number.isFinite(value) ? metric.format(value) : '-' }
+  })
+})
+const trendAxisMax = computed(() => {
+  const metric = activeMetric.value
+  const limit = gpuTrendLimit(metric, scopeGpus.value)
+  if (limit === undefined || metric.limit !== undefined) return limit
+
+  let max = Math.max(limit, ...temperatureReferenceLines.value)
+  for (const { points, valueKey } of series.value) {
+    for (const point of points) {
+      const value = point[valueKey]
+      if (Number.isFinite(value) && value > max) max = value
+    }
+  }
+  return max
+})
+const isSeriesHidden = id => hiddenByView.value.get(trendKey.value)?.has(id) ?? false
+const visibleSeries = computed(() => series.value.filter(item => !isSeriesHidden(item.id)))
+const temperatureTargets = computed(() => {
+  if (metricKey.value !== 'temperature') return []
+  const visibleIds = new Set(visibleSeries.value.filter(({ points }) =>
+    points.some(point => Number.isFinite(point.temperature))).map(item => item.id))
+  const targets = new Map()
+  for (const gpu of scopeGpus.value) {
+    const value = gpu.temperatureTargetCelsius
+    if (!visibleIds.has(gpu.uuid) || !Number.isFinite(value) || value <= 0) continue
+    if (!targets.has(value)) targets.set(value, { value, indices: [] })
+    targets.get(value).indices.push(gpu.index)
+  }
+  return [...targets.values()].sort((a, b) => a.value - b.value)
+})
+const temperatureReferenceLines = computed(() => temperatureTargets.value.map(target => target.value))
+const emptyTrend = computed(() => series.value.length && !visibleSeries.value.length
+  ? '当前未选择曲线' : `暂无${activeMetric.value.label}历史采样`)
+
+function toggleSeries(id) {
+  const key = trendKey.value
+  if (!hiddenByView.value.has(key)) hiddenByView.value.set(key, new Set())
+  const hidden = hiddenByView.value.get(key)
+  if (hidden.has(id)) hidden.delete(id)
+  else hidden.add(id)
+}
+let requestId = 0
 let refreshTimer = null
 
 const rangeOptions = [
@@ -237,44 +349,36 @@ const rangeOptions = [
 ]
 
 const allProcesses = computed(() =>
-  (status.value.gpus || [])
-    .flatMap((gpu) => (gpu.processes || []).map((process) => ({ ...process, gpuUuid: process.gpuUuid || gpu.uuid })))
+  gpuList.value
+    .flatMap((gpu) => (gpu.processes || []).map((process) => ({
+      ...process, gpuUuid: gpu.uuid, gpuIndex: gpu.index,
+    })))
     .sort((a, b) => b.usedMemoryMiB - a.usedMemoryMiB)
 )
 
-const gpuIndexByUuid = computed(() => {
-  const mapping = {}
-  for (const gpu of status.value.gpus || []) {
-    mapping[gpu.uuid] = gpu.index
-  }
-  return mapping
-})
-
 const loadGpuStatus = async () => {
+  const id = ++requestId
   loading.value = true
   error.value = ''
   try {
     const response = await api.get('/gpu/monitor', {
       params: { range: rangeKey.value },
     })
-    status.value = response.data || status.value
+    if (id === requestId) {
+      status.value = response.data || status.value
+      loaded.value = true
+    }
   } catch (err) {
-    error.value = err.response?.data?.error || '加载显卡监控失败'
+    if (id === requestId) error.value = err.response?.data?.error || '加载显卡监控失败'
   } finally {
-    loading.value = false
+    if (id === requestId) loading.value = false
   }
 }
 
 const setRange = async (value) => {
+  if (rangeKey.value === value) return
   rangeKey.value = value
   await loadGpuStatus()
-}
-
-const memoryPercent = (gpu) => {
-  if (!gpu.memoryTotalMiB) {
-    return 0
-  }
-  return Math.min(100, Math.max(0, (gpu.memoryUsedMiB / gpu.memoryTotalMiB) * 100))
 }
 
 const ownerLabel = (process) => {
@@ -402,13 +506,16 @@ const formatTime = (value) => {
 
 onMounted(() => {
   loadGpuStatus()
-  refreshTimer = window.setInterval(loadGpuStatus, 15 * 1000)
+  refreshTimer = window.setInterval(() => {
+    if (!loading.value) loadGpuStatus()
+  }, 5 * 1000)
 })
 
 onBeforeUnmount(() => {
+  requestId++
   if (refreshTimer) {
     window.clearInterval(refreshTimer)
   }
 })
-const processTable = useTableSort(() => allProcesses.value, { gpu: row => gpuIndexByUuid.value[row.gpuUuid], group: row => row.groups?.[0]?.name, owner: row => ownerLabel(row) })
+const processTable = useTableSort(() => allProcesses.value, { group: row => row.groups?.[0]?.name, owner: row => ownerLabel(row) })
 </script>
